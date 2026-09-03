@@ -16,8 +16,7 @@ Welcome! Here is the quick setup workflow to get up and running:
 3. **Run Locally**:
    - Backend: `python -m uvicorn backend.main:app --reload --port 8000` (API on http://localhost:8000)
    - Frontend: `npm run dev` inside `frontend/` (UI on http://localhost:5173)
-4. **Architecture & Specifications**:
-   - Full specifications: [`SIH26166_PROJECT_SPEC.md`](SIH26166_PROJECT_SPEC.md)
+4. **Documentation**:
    - Deep-dive documentation: [`docs/`](docs/) (architecture, algorithms, evaluation)
 
 ### Prerequisites
@@ -69,13 +68,8 @@ python -m pytest tests/ -v
 .\.venv\Scripts\python.exe -m pytest tests/ -v
 ```
 
-## Project Structure
-
-See `PROJECT_SPEC.md` §8 for the full directory layout.
-
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Algorithms](docs/algorithms.md)
 - [Evaluation](docs/evaluation.md)
-- [Project Specification](SIH26166_PROJECT_SPEC.md)

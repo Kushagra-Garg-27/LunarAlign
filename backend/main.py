@@ -2,7 +2,6 @@
 SIH26166 — FastAPI Backend Entry Point
 
 Minimal scaffold for the multi-modal lunar image registration system.
-See PROJECT_SPEC.md for the full specification.
 """
 
 from fastapi import FastAPI

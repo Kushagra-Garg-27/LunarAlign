@@ -16,8 +16,7 @@ conversion:
 This conversion is explicit and documented — the float32 ``FeatureImage``
 is never silently modified.
 
-This module is part of the **classical baseline** branch
-(see PROJECT_SPEC.md §6).
+This module is part of the **classical baseline** branch.
 """
 
 from __future__ import annotations

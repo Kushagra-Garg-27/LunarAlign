@@ -14,8 +14,7 @@ This module is deliberately separated from FLANN matching so:
 - alternative filtering strategies can be added later
 - the test can be unit-tested with synthetic data
 
-This module is part of the **classical baseline** branch
-(see PROJECT_SPEC.md §6).
+This module is part of the **classical baseline** branch.
 """
 
 from __future__ import annotations

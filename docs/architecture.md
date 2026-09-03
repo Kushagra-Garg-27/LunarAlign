@@ -1,7 +1,5 @@
 # Architecture
 
-See `PROJECT_SPEC.md` §4–§8 for the full architecture specification.
-
 ## Preprocessing Layer
 
 The preprocessing layer (`backend/preprocessing/`) provides the

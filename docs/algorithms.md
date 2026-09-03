@@ -1,7 +1,5 @@
 # Algorithms
 
-See `PROJECT_SPEC.md` §6 for algorithm specifications.
-
 ## Implemented
 
 ### Grayscale Conversion
@@ -18,7 +16,7 @@ suitable for feature extraction.
 
 The multi-band mean is a generic fallback.  It does not claim to be
 appropriate for IIRS hyperspectral data — that will require PCA or
-domain-specific band selection (see §6 of PROJECT_SPEC.md).
+domain-specific band selection.
 
 ### Intensity Normalization
 
@@ -465,7 +463,7 @@ where:
 
 ## Not Yet Implemented
 
-The following algorithms are specified in PROJECT_SPEC.md but are
+The following algorithms are planned for future phases but are
 not implemented at this stage:
 
 - Phase Congruency / Log-Gabor

@@ -7,8 +7,7 @@ SIFT's 128-dimensional float32 descriptors.
 This module performs raw k-nearest-neighbour matching only.  The Lowe
 ratio test is applied separately in ``backend.matching.ratio_test``.
 
-This module is part of the **classical baseline** branch
-(see PROJECT_SPEC.md §6).
+This module is part of the **classical baseline** branch.
 """
 
 from __future__ import annotations
