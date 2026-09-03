@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+frontend/.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project outputs (runtime-generated)
+outputs/*
+!outputs/.gitkeep
+
+# Data and Uploads (runtime-generated & large files)
+data/uploads/*
+!data/uploads/.gitkeep
+data/raw_downloads/
+data/sample/*
+!data/sample/.gitkeep
+!data/sample/README.md
+
+# Large lunar imagery & archive downloads (multi-hundred-MB to 1GB+)
+*.zip
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tgz
+*.img
+*.IMG
+*.raw
+*.RAW
+*.tif
+*.tiff
+*.hdf5
+*.h5
+
+# Preserved test fixtures (real Chandrayaan-2 small test fixtures)
+!tests/fixtures/**
+
+# Models
+models/
+*.pt
+*.pth
+*.onnx
