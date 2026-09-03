@@ -1,4 +1,4 @@
-# SIH26166 — Lunar Image Registration System
+# LunarAlign
 
 Multi-modal, sun-angle & scale invariant image correspondence using
 Chandrayaan-2 optical images (OHRC, TMC-2, IIRS).
