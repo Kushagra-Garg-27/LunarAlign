@@ -106,7 +106,8 @@ def extract_sift(
 
     gray_u8 = prepare_for_sift(feature_img)
 
-    sift = cv2.SIFT_create(
+    sift_create = getattr(cv2, "SIFT_create")
+    sift = sift_create(
         nfeatures=nfeatures,
         nOctaveLayers=nOctaveLayers,
         contrastThreshold=contrastThreshold,
