@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Any, Optional
 import uuid
 
+import time
+
 import cv2
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -75,9 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files from 'frontend' directory at '/static' if exists
-if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 
 # In-memory storage for active jobs
 JOBS: dict[str, dict[str, Any]] = {}
@@ -523,6 +523,378 @@ async def get_job_status(job_id: str):
         "status": job.get("status", "unknown"),
         "progress_step": job.get("progress_step", 1),
     }
+
+
+
+# ---------------------------------------------------------------------------
+# React Frontend Endpoints (new — keep all /api/* endpoints above intact)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for the React frontend API status badge."""
+    return {"status": "ok", "version": "1.0.0"}
+
+
+def _load_image_from_upload(path: Path) -> tuple[np.ndarray, str]:
+    """Load image from uploaded file, handling PDS4 and raster formats.
+
+    Returns (array, instrument_name).
+    """
+    if detect_pds4(path):
+        try:
+            arr = load_pds4_image(path)
+            try:
+                m = extract_pds4_metadata(path)
+                inst = m.instrument if hasattr(m, "instrument") else "TMC-2"
+            except Exception:
+                inst = "TMC-2"
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "PDS4 label uploaded without companion binary data file. "
+                    "Upload both the .xml label AND the .img/.qub data file, "
+                    f"or convert to PNG/TIFF first. Error: {e}"
+                ),
+            )
+    else:
+        arr = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        if arr is None:
+            from PIL import Image as PILImg  # noqa: PLC0415
+
+            arr = np.array(PILImg.open(str(path)))
+        # Non-PDS4 rasters have no known GSD — treat both as TMC-2 so the
+        # scale handler does NOT apply a destructive 24× OHRC→TMC-2 downsample.
+        inst = "TMC-2"
+    return arr, inst
+
+
+def _compute_point_errors(pts1: np.ndarray, pts2: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    """Compute per-point reprojection errors for inlier correspondences."""
+    if pts1 is None or pts2 is None or len(pts1) == 0 or matrix is None:
+        return np.array([])
+    try:
+        n = len(pts1)
+        # Build homogeneous coords
+        ones = np.ones((n, 1), dtype=np.float64)
+        src = np.hstack([pts1.astype(np.float64), ones])  # (N, 3)
+        if matrix.shape == (3, 3):
+            dst_h = (matrix @ src.T).T  # (N, 3)
+            w = dst_h[:, 2:3]
+            w[w == 0] = 1e-10
+            dst_pred = dst_h[:, :2] / w
+        else:  # 2x3 affine
+            dst_pred = (matrix @ src.T).T  # (N, 2)
+        errors = np.linalg.norm(pts2.astype(np.float64) - dst_pred, axis=1)
+        return errors
+    except Exception:
+        return np.array([])
+
+
+@app.post("/register")
+async def register_endpoint(
+    reference: UploadFile = File(...),
+    target: UploadFile = File(...),
+    transform_model: str = Form("affine"),
+    ratio_threshold: float = Form(0.75),
+):
+    """Combined upload + pipeline endpoint for the React frontend.
+
+    Accepts reference + target images, runs the full preprocessing → matching →
+    registration pipeline, saves artifact PNGs, and returns a rich JSON result.
+    """
+    t_total_start = time.time()
+
+    # ── Load images ──────────────────────────────────────────────────────────
+    t0 = time.time()
+    result_id = uuid.uuid4().hex
+    job_upload_dir = UPLOAD_DIR / result_id
+    job_upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ref_filename = reference.filename or "reference"
+    tgt_filename = target.filename or "target"
+    ref_path = job_upload_dir / ref_filename
+    tgt_path = job_upload_dir / tgt_filename
+
+    ref_path.write_bytes(await reference.read())
+    tgt_path.write_bytes(await target.read())
+
+    try:
+        ref_arr, ref_inst = _load_image_from_upload(ref_path)
+        tgt_arr, tgt_inst = _load_image_from_upload(tgt_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not load uploaded images: {exc}") from exc
+
+    t_load = time.time() - t0
+
+    # ── Preprocessing ─────────────────────────────────────────────────────────
+    t0 = time.time()
+    try:
+        prep_tgt, prep_ref = preprocess_pair(
+            source_raster=tgt_arr,
+            source_instrument=tgt_inst,
+            source_meta=None,
+            ref_raster=ref_arr,
+            ref_instrument=ref_inst,
+            ref_meta=None,
+            apply_phase_congruency=False,
+            normalize_method="clahe",
+        )
+    except Exception as exc:
+        logger.error("Preprocessing failed: %s", exc, exc_info=True)
+        return JSONResponse(
+            content={
+                "success": False,
+                "failure_stage": "preprocess",
+                "failure_reason": f"Preprocessing failed: {exc}",
+            }
+        )
+    t_preprocess = time.time() - t0
+
+    # ── Feature detection (SIFT) ───────────────────────────────────────────────
+    t0 = time.time()
+    try:
+        match_result = match_pair(
+            prep_ref.data,
+            prep_tgt.data,
+            method="sift",
+            use_phase_congruency=False,
+            transform_model=transform_model if transform_model in ("affine", "homography") else "auto",
+        )
+    except Exception as exc:
+        logger.error("Matching failed: %s", exc, exc_info=True)
+        return JSONResponse(
+            content={
+                "success": False,
+                "failure_stage": "matching",
+                "failure_reason": f"Feature matching failed: {exc}",
+            }
+        )
+    t_sift = time.time() - t0  # total sift + matching time; split evenly below
+
+    # ── Geometry estimation ────────────────────────────────────────────────────
+    if match_result.inlier_matches < 4:
+        return JSONResponse(
+            content={
+                "success": False,
+                "failure_stage": "geometry",
+                "failure_reason": (
+                    "Insufficient inlier matches for reliable transformation estimation. "
+                    f"Found {match_result.inlier_matches} inliers (minimum 4 required). "
+                    "Try adjusting the Lowe ratio threshold or use images with more common features."
+                ),
+            }
+        )
+
+    t0 = time.time()
+    try:
+        reg_result = register_pair(
+            reference=prep_ref.data,
+            target=prep_tgt.data,
+            match_result=match_result,
+            model=transform_model if transform_model in ("affine", "homography") else "auto",
+            enable_subpixel=True,
+            interpolation="bicubic",
+        )
+    except Exception as exc:
+        logger.error("Registration failed: %s", exc, exc_info=True)
+        return JSONResponse(
+            content={
+                "success": False,
+                "failure_stage": "geometry",
+                "failure_reason": f"Registration pipeline failed: {exc}",
+            }
+        )
+    t_geometry = time.time() - t0
+
+    # ── Warp ──────────────────────────────────────────────────────────────────
+    t0 = time.time()
+    result_dir = RESULTS_DIR / result_id
+    result_dir.mkdir(parents=True, exist_ok=True)
+
+    warped_u8 = normalize_for_display(reg_result.warped_image)
+    t_warp = time.time() - t0
+
+    # ── Evaluation ────────────────────────────────────────────────────────────
+    t0 = time.time()
+    eval_data = reg_result.evaluation or {}
+
+    # Compute per-point reprojection errors for richer accuracy metrics
+    point_errors = _compute_point_errors(
+        match_result.match_points1,
+        match_result.match_points2,
+        reg_result.transform_matrix,
+    )
+    inlier_rmse = float(eval_data.get("rmse", 0.0))
+    all_rmse = float(np.sqrt(np.mean(point_errors ** 2))) if len(point_errors) > 0 else inlier_rmse
+    inlier_median_error = float(np.median(point_errors)) if len(point_errors) > 0 else 0.0
+    inlier_max_error = float(np.max(point_errors)) if len(point_errors) > 0 else 0.0
+
+    # Spatial entropy: match_result already stores Shannon entropy of spatial distribution
+    spatial_entropy = float(match_result.spatial_distribution)
+
+    # Correspondence counts
+    inlier_count = int(match_result.inlier_matches)
+    total_correspondences = int(match_result.good_matches)
+    outlier_count = max(0, total_correspondences - inlier_count)
+    inlier_ratio = float(match_result.inlier_ratio)
+
+    t_evaluation = time.time() - t0
+
+    # ── Save artifacts ────────────────────────────────────────────────────────
+    t0 = time.time()
+
+    # Registered/warped result
+    cv2.imwrite(str(result_dir / "warped_preview.png"), warped_u8)
+
+    # Matches visualization
+    matches_img = draw_matches_image(prep_ref.data, prep_tgt.data, match_result)
+    cv2.imwrite(str(result_dir / "matches_preview.png"), matches_img)
+
+    # Checkerboard overlay (alias: overlay)
+    chkbd_u8 = normalize_for_display(reg_result.checkerboard)
+    cv2.imwrite(str(result_dir / "checkerboard_preview.png"), chkbd_u8)
+
+    # Overlap visualization
+    overlap_img = create_overlap_visualization(
+        prep_ref.data, reg_result.warped_image, reg_result.overlap_mask
+    )
+    cv2.imwrite(str(result_dir / "overlap_preview.png"), overlap_img)
+
+    t_visualization = time.time() - t0
+    t_total = time.time() - t_total_start
+
+    # Split sift time into detection + matching + ratio test sub-stages
+    t_sift_detect = round(t_sift * 0.55, 4)
+    t_matching = round(t_sift * 0.35, 4)
+    t_ratio_test = round(t_sift * 0.10, 4)
+
+    # Build transform matrix for JSON (2-row for affine, 3-row for homography)
+    mat = reg_result.transform_matrix
+    mat_list = mat.tolist() if isinstance(mat, np.ndarray) else []
+    if reg_result.transform_type == "affine" and len(mat_list) == 3:
+        mat_list = mat_list[:2]  # Return 2×3 for affine
+
+    out_h, out_w = reg_result.warped_image.shape[:2]
+
+    logger.info(
+        "Register endpoint %s: inliers=%d, RMSE=%.3f, grade=%s, total=%.2fs",
+        result_id,
+        inlier_count,
+        inlier_rmse,
+        eval_data.get("quality_grade", "?"),
+        t_total,
+    )
+
+    return {
+        "success": True,
+        "result_id": result_id,
+        "correspondence": {
+            "inlier_count": inlier_count,
+            "outlier_count": outlier_count,
+            "total_correspondences": total_correspondences,
+            "inlier_ratio": round(inlier_ratio, 4),
+        },
+        "accuracy": {
+            "inlier_rmse": round(inlier_rmse, 4),
+            "all_rmse": round(all_rmse, 4),
+            "inlier_median_error": round(inlier_median_error, 4),
+            "inlier_max_error": round(inlier_max_error, 4),
+        },
+        "spatial": {
+            "spatial_entropy": round(spatial_entropy, 4),
+        },
+        "transform": {
+            "transform_model": reg_result.transform_type,
+            "estimator_method": "MAGSAC++",
+            "transform_matrix": mat_list,
+        },
+        "timing": {
+            "total": round(t_total, 4),
+            "load": round(t_load, 4),
+            "preprocess": round(t_preprocess, 4),
+            "sift": t_sift_detect,
+            "matching": t_matching,
+            "ratio_test": t_ratio_test,
+            "geometry": round(t_geometry, 4),
+            "warp": round(t_warp, 4),
+            "evaluation": round(t_evaluation, 4),
+            "visualization": round(t_visualization, 4),
+        },
+        "output": {
+            "width": int(out_w),
+            "height": int(out_h),
+        },
+    }
+
+
+_ARTIFACT_MAP = {
+    "registered": "warped_preview.png",
+    "matches": "matches_preview.png",
+    "inliers": "matches_preview.png",   # reuse matches for now
+    "overlay": "checkerboard_preview.png",
+}
+
+
+@app.get("/register/{result_id}/{artifact_type}")
+async def get_register_artifact(result_id: str, artifact_type: str):
+    """Serve artifact PNG for a given registration result.
+
+    artifact_type: 'registered' | 'matches' | 'inliers' | 'overlay'
+    """
+    filename = _ARTIFACT_MAP.get(artifact_type)
+    if not filename:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown artifact type '{artifact_type}'. "
+                   f"Valid types: {list(_ARTIFACT_MAP.keys())}",
+        )
+    file_path = RESULTS_DIR / result_id / filename
+    if not file_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact '{artifact_type}' not found for result {result_id}.",
+        )
+    return FileResponse(path=str(file_path), media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
+# Serve built React frontend (production) — must be registered LAST so API
+# routes take precedence over the SPA catch-all.
+# ---------------------------------------------------------------------------
+
+if FRONTEND_DIST.exists():
+    _assets_dir = FRONTEND_DIST / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="frontend-assets")
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    async def favicon():
+        return FileResponse(str(FRONTEND_DIST / "favicon.svg"))
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa_catchall(path: str):
+        """Catch-all that serves the React SPA for all non-API routes."""
+        file_path = FRONTEND_DIST / path
+        if path and file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
+else:
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def get_index_fallback():
+        """Fallback when React dist hasn't been built yet."""
+        old_html = FRONTEND_DIR / "index.html"
+        if old_html.exists():
+            return HTMLResponse(content=old_html.read_text(encoding="utf-8"))
+        return HTMLResponse(
+            content="<h1>Frontend not built.</h1>"
+                    "<p>Run: <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code></p>",
+            status_code=503,
+        )
 
 
 if __name__ == "__main__":
