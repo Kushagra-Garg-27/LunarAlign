@@ -105,3 +105,75 @@ def _extract_rasterio(path: Path) -> dict[str, Any]:
             "num_bands": src.count,
             "image_dtype": str(src.dtypes[0]) if src.dtypes else "unknown",
         }
+
+
+def extract_pds4_file_metadata(xml_path: str | Path) -> dict[str, Any]:
+    """Extract metadata from a PDS4 label file without loading pixel data.
+
+    Combines the basic raster properties (width, height, num_bands, dtype)
+    obtained by opening the label via rasterio with the rich PDS4 metadata
+    (instrument, isda: fields, corner coordinates, etc.) extracted from the
+    label XML.
+
+    Follows the same contract as :func:`extract_image_metadata` — returns a
+    plain dict suitable for API responses.
+
+    Parameters
+    ----------
+    xml_path : str | Path
+        Path to the PDS4 ``.xml`` label file.
+
+    Returns
+    -------
+    dict[str, Any]
+        Keys include at minimum:
+
+        - ``width``, ``height``, ``num_bands``, ``image_dtype`` (from rasterio)
+        - ``pds4_instrument`` — canonical instrument identifier
+        - ``pds4_logical_identifier``, ``pds4_title``
+        - ``pds4_start_date_time``, ``pds4_stop_date_time``
+        - ``pds4_isda_product_params`` — generic key-value dict
+        - ``pds4_isda_geometry_params`` — generic key-value dict
+        - ``pds4_tmc2_product_params`` — named TMC-2 fields (or ``None``)
+        - ``pds4_tmc2_geometry_params`` — TMC-2 corner coords (or ``None``)
+        - ``pds4_wavelength_info`` — IIRS wavelength note (or ``None``)
+
+    Raises
+    ------
+    FileNotFoundError
+        If *xml_path* does not exist.
+    ValueError
+        If *xml_path* is not a valid PDS4 Product_Observational label.
+    """
+    from backend.preprocessing.pds4 import extract_pds4_metadata
+
+    xml_path = Path(xml_path)
+
+    # Raster geometry via rasterio (reads label header, no pixel decode)
+    raster_info: dict[str, Any] = {}
+    try:
+        raster_info = _extract_rasterio(xml_path)
+    except Exception as exc:
+        logger.warning(
+            "Could not extract raster properties via rasterio for %s: %s",
+            xml_path.name, exc,
+        )
+        raster_info = {"width": None, "height": None, "num_bands": None, "image_dtype": None}
+
+    # PDS4 label metadata via XML parse
+    pds4_meta = extract_pds4_metadata(xml_path)
+
+    return {
+        **raster_info,
+        "pds4_instrument": pds4_meta.instrument,
+        "pds4_logical_identifier": pds4_meta.logical_identifier,
+        "pds4_title": pds4_meta.title,
+        "pds4_start_date_time": pds4_meta.start_date_time,
+        "pds4_stop_date_time": pds4_meta.stop_date_time,
+        "pds4_investigation_name": pds4_meta.investigation_name,
+        "pds4_isda_product_params": pds4_meta.isda_product_params,
+        "pds4_isda_geometry_params": pds4_meta.isda_geometry_params,
+        "pds4_tmc2_product_params": pds4_meta.tmc2_product_params,
+        "pds4_tmc2_geometry_params": pds4_meta.tmc2_geometry_params,
+        "pds4_wavelength_info": pds4_meta.wavelength_info,
+    }

@@ -560,3 +560,406 @@ class TestEndToEnd:
         clahe_result = apply_clahe(feat_for_clahe)
         assert clahe_result.data.shape == (32, 48)
         assert np.all(np.isfinite(clahe_result.data))
+
+
+# ---------------------------------------------------------------------------
+# STAGE 2B PREPROCESSING PIPELINE TESTS (USING REAL FIXTURES)
+# ---------------------------------------------------------------------------
+
+PDS4_FIXTURES = Path("tests/fixtures/pds4")
+TMC2_FIXTURE_XML = PDS4_FIXTURES / "tmc2" / "ch2_tmc_sample_500x500.xml"
+OHRC_FIXTURE_XML = PDS4_FIXTURES / "ohrc" / "ch2_ohrc_sample_500x500.xml"
+IIRS_FIXTURE_XML = PDS4_FIXTURES / "iirs" / "ch2_iirs_sample_200x200x16.xml"
+
+
+class TestNormalize:
+    """Tests for backend.preprocessing.normalize (Module 01)."""
+
+    def test_clahe_uint16_tmc2(self):
+        """CLAHE on real uint16 TMC-2 fixture -> float32 in [0, 1]."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.normalize import normalize_intensity
+
+        raw = load_pds4_raster(TMC2_FIXTURE_XML)
+        assert raw.dtype == np.uint16
+        out = normalize_intensity(raw.data, method="clahe")
+
+        assert out.shape == raw.data.shape
+        assert out.dtype == np.float32
+        assert float(out.min()) >= 0.0
+        assert float(out.max()) <= 1.0
+        assert float(out.max()) > float(out.min())
+
+    def test_clahe_uint8_ohrc(self):
+        """CLAHE on real uint8 OHRC fixture -> float32 in [0, 1]."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.normalize import normalize_intensity
+
+        raw = load_pds4_raster(OHRC_FIXTURE_XML)
+        assert raw.dtype == np.uint8
+        out = normalize_intensity(raw.data, method="clahe")
+
+        assert out.shape == raw.data.shape
+        assert out.dtype == np.float32
+        assert float(out.min()) >= 0.0
+        assert float(out.max()) <= 1.0
+
+    def test_histogram_eq_method(self):
+        """Global histogram equalization method works and returns float32 [0, 1]."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.normalize import normalize_intensity
+
+        raw = load_pds4_raster(TMC2_FIXTURE_XML)
+        out = normalize_intensity(raw.data, method="histogram_eq")
+
+        assert out.shape == raw.data.shape
+        assert out.dtype == np.float32
+        assert float(out.min()) >= 0.0
+        assert float(out.max()) <= 1.0
+
+    def test_minmax_method(self):
+        """Minmax method maps array strictly to [0, 1]."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.normalize import normalize_intensity
+
+        raw = load_pds4_raster(OHRC_FIXTURE_XML)
+        out = normalize_intensity(raw.data, method="minmax")
+
+        assert out.shape == raw.data.shape
+        assert out.dtype == np.float32
+        np.testing.assert_allclose(float(out.min()), 0.0, atol=1e-5)
+        np.testing.assert_allclose(float(out.max()), 1.0, atol=1e-5)
+
+    def test_match_histograms_tmc_ohrc(self):
+        """Histogram matching between TMC-2 and OHRC real fixtures."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.normalize import match_histograms, normalize_intensity
+
+        tmc_raw = load_pds4_raster(TMC2_FIXTURE_XML)
+        ohrc_raw = load_pds4_raster(OHRC_FIXTURE_XML)
+
+        src = normalize_intensity(ohrc_raw.data, method="minmax")
+        ref = normalize_intensity(tmc_raw.data, method="minmax")
+
+        matched = match_histograms(src, ref)
+
+        assert matched.shape == src.shape
+        assert matched.dtype == np.float32
+        assert np.all(np.isfinite(matched))
+
+    def test_output_shape_preserved(self):
+        """Normalization preserves arbitrary non-square 2D shape."""
+        from backend.preprocessing.normalize import normalize_intensity
+
+        arr = np.random.randint(0, 1000, (37, 89), dtype=np.uint16)
+        out = normalize_intensity(arr, method="clahe")
+        assert out.shape == (37, 89)
+
+    def test_nan_inf_handling(self):
+        """Arrays containing NaNs and Infs do not crash normalization."""
+        from backend.preprocessing.normalize import normalize_intensity
+
+        arr = np.array([[np.nan, 10.0], [np.inf, -np.inf]], dtype=np.float32)
+        out = normalize_intensity(arr, method="minmax")
+        assert out.dtype == np.float32
+        assert np.all(np.isfinite(out))
+
+    def test_unsupported_method_raises(self):
+        """Invalid normalization method name raises ValueError."""
+        from backend.preprocessing.normalize import normalize_intensity
+
+        arr = np.zeros((10, 10), dtype=np.uint8)
+        with pytest.raises(ValueError, match="Unsupported normalization method"):
+            normalize_intensity(arr, method="invalid_method")
+
+
+class TestBandReduction:
+    """Tests for backend.preprocessing.band_reduction (Module 02)."""
+
+    def test_pca_iirs_16band_fixture(self):
+        """PCA on real IIRS 16-band fixture reduces to (n_components, H, W)."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.band_reduction import reduce_bands_pca
+
+        raw = load_pds4_raster(IIRS_FIXTURE_XML)
+        # RawImage.data is (200, 200, 16) bands-last or (16, 200, 200) BSQ
+        data = raw.data
+        if data.ndim == 3 and data.shape[2] == 16:
+            cube = np.moveaxis(data, -1, 0)  # to (16, 200, 200)
+        else:
+            cube = data
+
+        reduced = reduce_bands_pca(cube, n_components=3)
+
+        assert reduced.shape == (3, 200, 200)
+        assert reduced.dtype == np.float32
+        assert np.all(np.isfinite(reduced))
+
+    def test_pca_pc1_captures_structure(self):
+        """PC1 has non-trivial variance across the spatial domain."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.band_reduction import reduce_bands_pca
+
+        raw = load_pds4_raster(IIRS_FIXTURE_XML)
+        data = raw.data
+        cube = np.moveaxis(data, -1, 0) if data.ndim == 3 and data.shape[2] == 16 else data
+
+        reduced = reduce_bands_pca(cube, n_components=1)
+        pc1 = reduced[0]
+
+        assert pc1.shape == (200, 200)
+        assert np.var(pc1) > 0.0
+
+    def test_mean_reduction(self):
+        """Mean band reduction collapses 3D cube to 2D (H, W)."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.band_reduction import reduce_bands_mean
+
+        raw = load_pds4_raster(IIRS_FIXTURE_XML)
+        data = raw.data
+        cube = np.moveaxis(data, -1, 0) if data.ndim == 3 and data.shape[2] == 16 else data
+
+        mean_img = reduce_bands_mean(cube)
+
+        assert mean_img.shape == (200, 200)
+        assert mean_img.dtype == np.float32
+
+    def test_select_bands_valid(self):
+        """Select specific bands extracts requested subset."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.band_reduction import select_bands
+
+        raw = load_pds4_raster(IIRS_FIXTURE_XML)
+        data = raw.data
+        cube = np.moveaxis(data, -1, 0) if data.ndim == 3 and data.shape[2] == 16 else data
+
+        sub = select_bands(cube, [0, 3, 7])
+        assert sub.shape == (3, 200, 200)
+        assert sub.dtype == np.float32
+
+    def test_select_bands_invalid_raises(self):
+        """Selecting out-of-range band indices raises IndexError."""
+        from backend.preprocessing.band_reduction import select_bands
+
+        cube = np.zeros((5, 20, 20), dtype=np.float32)
+        with pytest.raises(IndexError):
+            select_bands(cube, [10])
+
+    def test_single_band_input_passthrough(self):
+        """2D input passes through PCA without crashing."""
+        from backend.preprocessing.band_reduction import reduce_bands_pca, reduce_bands_mean
+
+        arr = np.random.rand(50, 50).astype(np.float32)
+        out_pca = reduce_bands_pca(arr, n_components=1)
+        out_mean = reduce_bands_mean(arr)
+
+        assert out_pca.shape == (1, 50, 50)
+        assert out_mean.shape == (50, 50)
+
+
+class TestScaleHandler:
+    """Tests for backend.preprocessing.scale_handler (Module 06)."""
+
+    def test_compute_scale_ratio_known_values(self):
+        """OHRC (0.21 m/px) to TMC-2 (5.0 m/px) ratio is 0.042."""
+        from backend.preprocessing.scale_handler import compute_scale_ratio
+
+        ratio = compute_scale_ratio(0.21, 5.0)
+        np.testing.assert_allclose(ratio, 0.042, atol=1e-4)
+
+    def test_downsample_to_match_dimensions(self):
+        """downsample_to_match correctly reduces image dimensions."""
+        from backend.preprocessing.scale_handler import downsample_to_match
+
+        img = np.ones((500, 500), dtype=np.float32)
+        downsampled = downsample_to_match(img, 0.5)
+
+        assert downsampled.shape == (250, 250)
+        assert downsampled.dtype == np.float32
+
+    def test_gaussian_pyramid_levels(self):
+        """Pyramid generates requested number of halved levels."""
+        from backend.preprocessing.scale_handler import build_gaussian_pyramid
+
+        img = np.zeros((128, 128), dtype=np.float32)
+        pyr = build_gaussian_pyramid(img, levels=4)
+
+        assert len(pyr) == 4
+        assert pyr[0].shape == (128, 128)
+        assert pyr[1].shape == (64, 64)
+        assert pyr[2].shape == (32, 32)
+        assert pyr[3].shape == (16, 16)
+
+    def test_scale_ratio_one_returns_unchanged(self):
+        """Scale ratio >= 1.0 returns image with original dimensions."""
+        from backend.preprocessing.scale_handler import downsample_to_match
+
+        img = np.random.rand(64, 64).astype(np.float32)
+        out = downsample_to_match(img, 1.0)
+
+        assert out.shape == (64, 64)
+
+    def test_get_resolution_known_defaults(self):
+        """get_resolution returns canonical defaults for instruments."""
+        from backend.preprocessing.scale_handler import get_resolution
+
+        assert get_resolution(None, "OHRC") == 0.21
+        assert get_resolution(None, "TMC-2") == 5.0
+        assert get_resolution(None, "TMC2") == 5.0
+        assert get_resolution(None, "IIRS") == 82.7
+
+    def test_get_resolution_from_metadata(self):
+        """get_resolution extracts pixel_resolution from PDS4 metadata dictionary."""
+        from backend.preprocessing.scale_handler import get_resolution
+
+        meta = {
+            "pds4_isda_product_params": {
+                "pixel_resolution": {"value": "4.27", "unit": "m/pixel"}
+            }
+        }
+        res = get_resolution(meta, "TMC2")
+        assert res == 4.27
+
+
+class TestPhaseCongruency:
+    """Tests for backend.preprocessing.illumination (Module 03)."""
+
+    def test_output_shape_matches_input(self):
+        """Phase congruency output matches input shape."""
+        from backend.preprocessing.illumination import compute_phase_congruency
+
+        img = np.random.rand(40, 50).astype(np.float32)
+        pc_map, ori_map = compute_phase_congruency(img, nscale=3, norient=4)
+
+        assert pc_map.shape == (40, 50)
+        assert ori_map.shape == (40, 50)
+        assert pc_map.dtype == np.float32
+        assert ori_map.dtype == np.float32
+
+    def test_output_in_zero_one_range(self):
+        """Phase congruency map is strictly bounded in [0, 1]."""
+        from backend.preprocessing.illumination import compute_phase_congruency
+
+        img = np.random.rand(48, 48).astype(np.float32)
+        pc_map, _ = compute_phase_congruency(img)
+
+        assert float(pc_map.min()) >= 0.0
+        assert float(pc_map.max()) <= 1.0
+
+    def test_step_edge_high_congruency(self):
+        """Synthetic step edge produces high phase congruency at the boundary."""
+        from backend.preprocessing.illumination import compute_edge_map
+
+        img = np.zeros((64, 64), dtype=np.float32)
+        img[:, 32:] = 1.0  # sharp vertical step edge at column 32
+
+        edge_map = compute_edge_map(img, method="phase_congruency")
+
+        # Edge vicinity (col 30..34) should have higher response than flat region (col 10..15)
+        edge_response = float(np.mean(edge_map[:, 31:34]))
+        flat_response = float(np.mean(edge_map[:, 10:15]))
+        assert edge_response > flat_response
+
+    def test_canny_fallback_method(self):
+        """Canny edge map option works as fallback."""
+        from backend.preprocessing.illumination import compute_edge_map
+
+        img = np.zeros((64, 64), dtype=np.float32)
+        img[:, 32:] = 1.0
+        canny_map = compute_edge_map(img, method="canny")
+
+        assert canny_map.shape == (64, 64)
+        assert canny_map.dtype == np.float32
+        assert float(canny_map.max()) > 0.0
+
+
+class TestPreprocessPipeline:
+    """Tests for backend.preprocessing.preprocess (Pipeline Orchestrator)."""
+
+    def test_preprocess_single_tmc2(self):
+        """preprocess_single processes TMC-2 fixture."""
+        from backend.preprocessing.pds4 import load_pds4_raster, extract_pds4_metadata
+        from backend.preprocessing.preprocess import preprocess_single
+
+        raw = load_pds4_raster(TMC2_FIXTURE_XML)
+        meta = extract_pds4_metadata(TMC2_FIXTURE_XML)
+        prep = preprocess_single(raw.data, instrument="TMC-2", metadata=meta.__dict__)
+
+        assert prep.data.shape == (500, 500)
+        assert prep.data.dtype == np.float32
+        assert prep.instrument == "TMC-2"
+        assert "normalize_clahe" in prep.preprocessing_steps
+
+    def test_preprocess_single_ohrc(self):
+        """preprocess_single processes OHRC fixture."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.preprocess import preprocess_single
+
+        raw = load_pds4_raster(OHRC_FIXTURE_XML)
+        prep = preprocess_single(raw.data, instrument="OHRC")
+
+        assert prep.data.shape == (500, 500)
+        assert prep.data.dtype == np.float32
+        assert prep.instrument == "OHRC"
+
+    def test_preprocess_single_iirs_reduces_bands(self):
+        """preprocess_single on 3D IIRS cube performs band reduction."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.preprocess import preprocess_single
+
+        raw = load_pds4_raster(IIRS_FIXTURE_XML)
+        prep = preprocess_single(raw.data, instrument="IIRS")
+
+        assert prep.data.ndim == 2
+        assert prep.data.shape == (200, 200)
+        assert prep.data.dtype == np.float32
+        assert "pca_band_reduction" in prep.preprocessing_steps
+
+    def test_preprocess_pair_ohrc_tmc_resolution_matched(self):
+        """preprocess_pair downsamples OHRC to match TMC-2 coarser resolution."""
+        from backend.preprocessing.pds4 import load_pds4_raster, extract_pds4_metadata
+        from backend.preprocessing.preprocess import preprocess_pair
+
+        ohrc_raw = load_pds4_raster(OHRC_FIXTURE_XML)
+        tmc_raw = load_pds4_raster(TMC2_FIXTURE_XML)
+        ohrc_meta = extract_pds4_metadata(OHRC_FIXTURE_XML).__dict__
+        tmc_meta = extract_pds4_metadata(TMC2_FIXTURE_XML).__dict__
+
+        src_prep, ref_prep = preprocess_pair(
+            source_raster=ohrc_raw.data,
+            source_instrument="OHRC",
+            source_meta=ohrc_meta,
+            ref_raster=tmc_raw.data,
+            ref_instrument="TMC-2",
+            ref_meta=tmc_meta,
+            apply_phase_congruency=True,
+        )
+
+        assert src_prep.pixel_resolution == ref_prep.pixel_resolution
+        assert any("downsampled" in step for step in src_prep.preprocessing_steps)
+        assert "phase_congruency" in src_prep.preprocessing_steps
+        assert "phase_congruency" in ref_prep.preprocessing_steps
+
+    def test_preprocess_steps_audit_trail(self):
+        """Audit trail accurately records applied transformation steps."""
+        from backend.preprocessing.preprocess import preprocess_single
+
+        arr = np.random.rand(100, 100).astype(np.float32)
+        prep = preprocess_single(
+            arr,
+            instrument="OHRC",
+            target_resolution=5.0,  # Trigger downsampling from 0.21 -> 5.0
+            normalize_method="minmax",
+        )
+
+        assert "normalize_minmax" in prep.preprocessing_steps
+        assert any("downsampled" in s for s in prep.preprocessing_steps)
+
+    def test_preprocess_pair_missing_ref_raises(self):
+        """preprocess_pair raises ValueError if reference raster is None."""
+        from backend.preprocessing.preprocess import preprocess_pair
+
+        arr = np.ones((10, 10), dtype=np.float32)
+        with pytest.raises(ValueError, match="ref_raster must be provided"):
+            preprocess_pair(arr, "OHRC", {}, None, "TMC-2", {})
+
