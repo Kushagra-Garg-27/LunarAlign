@@ -142,20 +142,25 @@ def normalize_for_display(img: np.ndarray) -> np.ndarray:
             else:
                 arr = arr[:, :, 0]
 
-    # 2D Grayscale normalization — ignore zero-padded borders from warping
+    # 2D Grayscale normalization: robust percentile stretch over all finite pixels.
+    # Zero-padded warping borders naturally anchor vmin=0; actual content is
+    # stretched to the 98th-percentile upper bound, giving full visible range.
     arr = arr.astype(np.float64)
+    finite_mask = np.isfinite(arr)
+    if not finite_mask.any():
+        return np.zeros_like(arr, dtype=np.uint8)
 
-    mask = arr > 0
-    if mask.any():
-        valid_pixels = arr[mask]
-        vmin = float(np.percentile(valid_pixels, 1))
-        vmax = float(np.percentile(valid_pixels, 99))
-    else:
-        vmin, vmax = 0.0, 1.0
+    finite_pixels = arr[finite_mask]
+    # Replace non-finite values with 0 before normalization
+    arr = np.where(finite_mask, arr, 0.0)
 
+    vmin = float(np.percentile(finite_pixels, 2))
+    vmax = float(np.percentile(finite_pixels, 98))
+
+    # Fallback: if the spread is too small (e.g. constant image), use full range
     if vmax - vmin < 1e-10:
-        vmin = float(arr.min())
-        vmax = float(arr.max())
+        vmin = float(finite_pixels.min())
+        vmax = float(finite_pixels.max())
 
     if vmax - vmin < 1e-10:
         return np.zeros_like(arr, dtype=np.uint8)
@@ -298,7 +303,10 @@ async def upload_images(
             ref_arr = np.array(PILImg.open(str(ref_path)))
 
     # Load target
-    tgt_inst = "OHRC"
+    # NOTE: non-PDS4 rasters (PNG/TIFF) have no known ground-sample distance.
+    # Default both instruments to "TMC-2" so the scale-handler treats them as
+    # same-resolution and does NOT apply the destructive 24× OHRC→TMC-2 downsample.
+    tgt_inst = "TMC-2"
     if detect_pds4(tgt_path):
         try:
             tgt_arr = load_pds4_image(tgt_path)
