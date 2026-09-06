@@ -3,7 +3,7 @@ SIH26166 — Internal image representation.
 
 Defines typed data structures that carry image data through the pipeline.
 
-Two distinct representations are maintained:
+Three distinct representations are maintained:
 
 1. **RawImage** — the full-fidelity loaded image.  All original bands,
    dtype, and metadata are preserved.  This is what the I/O layer produces.
@@ -12,9 +12,14 @@ Two distinct representations are maintained:
    feature extraction / classical CV algorithms.  Derived from a RawImage
    via an explicit conversion step (grayscale + optional normalisation).
 
-Downstream code should accept one of these two types explicitly rather
-than raw ``ndarray`` to keep the boundary between "original data" and
-"processing data" visible and auditable.
+3. **PDS4Metadata** — structured metadata extracted from a PDS4 label
+   (``.xml`` file) for Chandrayaan-2 instruments (TMC-2, OHRC, IIRS).
+   Carries both the confirmed named fields for TMC-2 and a generic
+   key-value dict for all instruments (isda: namespace).
+
+Downstream code should accept one of these explicit types rather than raw
+``ndarray`` to keep the boundary between "original data" and "processing
+data" visible and auditable.
 """
 
 from __future__ import annotations
@@ -92,3 +97,62 @@ class FeatureImage:
     height: int
     source_dtype: np.dtype
     conversion_method: str
+
+
+@dataclass(frozen=False)
+class PDS4Metadata:
+    """Structured metadata extracted from a Chandrayaan-2 PDS4 label.
+
+    Populated by :func:`backend.preprocessing.pds4.extract_pds4_metadata`.
+
+    Attributes
+    ----------
+    logical_identifier : str | None
+        PDS4 logical identifier from ``Identification_Area``.
+    title : str | None
+        Product title from ``Identification_Area``.
+    start_date_time : str | None
+        Observation start time (ISO 8601) from ``Time_Coordinates``.
+    stop_date_time : str | None
+        Observation stop time (ISO 8601) from ``Time_Coordinates``.
+    investigation_name : str | None
+        Mission name from ``Investigation_Area`` (e.g. ``"chandrayaan-2"``).
+    instrument : str
+        Canonical instrument identifier: ``"TMC2"``, ``"OHRC"``,
+        ``"IIRS"``, or ``"UNKNOWN"``.
+    isda_product_params : dict[str, Any]
+        Generic key-value extraction of all children under
+        ``Mission_Area/isda:Product_Parameters``.  Keys are the local
+        tag names (or dotted paths for nested containers); values are
+        ``{"value": str, "unit": str | None}`` dicts.  Present for all
+        instruments.  For OHRC/IIRS these are the *observed* fields from
+        a single real sample, not a validated schema.
+    isda_geometry_params : dict[str, Any]
+        Same structure as above, for ``isda:Geometry_Parameters``.
+    tmc2_product_params : dict[str, Any] | None
+        TMC-2 only: subset of ``isda_product_params`` containing the
+        confirmed named fields (pixel_resolution, sun_azimuth, etc.).
+        ``None`` for non-TMC-2 products.
+    tmc2_geometry_params : dict[str, Any] | None
+        TMC-2 only: corner coordinates from both
+        ``System_Level_Coordinates`` and ``Refined_Corner_Coordinates``,
+        extracted from ``isda_geometry_params`` with dotted-path keys.
+        ``None`` for non-TMC-2 products.
+    wavelength_info : str | None
+        IIRS only: human-readable note describing the location of
+        per-band wavelength metadata in the label XML.  ``None`` for
+        non-IIRS products.  Extraction/use of wavelength values is out
+        of scope for Stage 2a.
+    """
+
+    logical_identifier: str | None
+    title: str | None
+    start_date_time: str | None
+    stop_date_time: str | None
+    investigation_name: str | None
+    instrument: str
+    isda_product_params: dict[str, Any] = field(default_factory=dict)
+    isda_geometry_params: dict[str, Any] = field(default_factory=dict)
+    tmc2_product_params: dict[str, Any] | None = None
+    tmc2_geometry_params: dict[str, Any] | None = None
+    wavelength_info: str | None = None

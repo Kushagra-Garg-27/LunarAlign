@@ -62,7 +62,13 @@ data/sample/*
 *.h5
 
 # Preserved test fixtures (real Chandrayaan-2 small test fixtures)
+# The extension patterns above (*.img, *.tif, etc.) take priority, so we need
+# explicit per-extension overrides for fixture files.
 !tests/fixtures/**
+!tests/fixtures/**/*.img
+!tests/fixtures/**/*.qub
+!tests/fixtures/**/*.xml
+!tests/fixtures/**/*.md
 
 # Models
 models/

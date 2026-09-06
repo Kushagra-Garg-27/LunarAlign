@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><?xml-model href="https://isda.issdc.gov.in/pds4/isda/v1/ch2_ldd_ISDA_1000.sch" schematypens="http://purl.oclc.org/dsdl/schematron" ?><Product_Observational xmlns="http://pds.nasa.gov/pds4/pds/v1" xmlns:disp="http://pds.nasa.gov/pds4/disp/v1" xmlns:isda="https://isda.issdc.gov.in/pds4/isda/v1" xmlns:pds="http://pds.nasa.gov/pds4/pds/v1" xmlns:sp="http://pds.nasa.gov/pds4/sp/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://pds.nasa.gov/pds4/pds/v1 http://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1B00.xsd                  http://pds.nasa.gov/pds4/disp/v1 http://pds.nasa.gov/pds4/disp/v1/PDS4_DISP_1301.xsd                 http://pds.nasa.gov/pds4/sp/v1 http://pds.nasa.gov/pds4/sp/v1/PDS4_SP_1100.xsd           https://isda.issdc.gov.in/pds4/isda/v1 https://isda.issdc.gov.in/pds4/isda/v1/ch2_ldd_ISDA_1000.xsd">
+
+    <Identification_Area>
+        <logical_identifier>urn:isro:isda:ch2_cho.iir:data_calibrated:ch2_iir_nci_20240616t1338294007_d_img_d18</logical_identifier>
+        <version_id>1.0</version_id>
+        <title>Chandrayaan-2 Orbiter IIRS Experiment</title>
+        <information_model_version>1.11.0.0</information_model_version>
+        <product_class>Product_Observational</product_class>
+        <Modification_History>
+            <Modification_Detail>
+                <modification_date>2019-12-02</modification_date>
+                <version_id>1.0</version_id>
+                <description>PDS4 product label created by SAC Optical DP Team</description>
+            </Modification_Detail>
+        </Modification_History>
+    </Identification_Area>
+    <Observation_Area>
+        <Time_Coordinates>
+            <start_date_time>2024-06-16T13:38:29.4007Z</start_date_time>
+            <stop_date_time>2024-06-16T13:50:17.2277Z</stop_date_time>
+        </Time_Coordinates>
+        <Primary_Result_Summary>
+            <purpose>Science</purpose>
+	    <processing_level>Calibrated</processing_level>
+	</Primary_Result_Summary>
+        <Investigation_Area>
+            <name>Chandrayaan-2</name>
+            <type>Mission</type>
+            <Internal_Reference>
+                <lidvid_reference>urn:isro:isda:context:investigation:mission.chandrayaan2::1.0</lidvid_reference>
+                <reference_type>data_to_investigation</reference_type>
+            </Internal_Reference>
+        </Investigation_Area>
+        <Observing_System>
+            <Observing_System_Component>
+                <name>Chandrayaan 2 Orbiter</name>
+                <type>Spacecraft</type>
+                <description>
+                    Chandrayaan-2 Orbiter is an Orbiter craft under the Chandrayaan-2 Spacecraft 
+                    consists of various scientific instruments.
+                </description>
+            </Observing_System_Component>
+            <Observing_System_Component>
+                <name>imaging infrared spectrometer</name>
+                <type>Instrument</type>
+                <description>
+                    IIRS (Imaging InfraRed Spectrometer) is one of the scientific instrument hosted 
+                    on the Chandrayaan-2 Orbiter. The instrument is a grating based spectrometer 
+                    covering the spectral region between 0.8 um to 5.0 um.
+                </description>
+            </Observing_System_Component>
+        </Observing_System>
+        <Target_Identification>
+            <name>Moon</name>
+            <type>Satellite</type>
+            <description>Moon is a natural satellite of Earth</description>
+        </Target_Identification>
+	    
+        <Mission_Area>
+            <isda:Product_Parameters>
+                <isda:job_id>IIRXXD18CHO2145602NNNN24168151239757_V2_1</isda:job_id>
+                <isda:level0_dir_name>IIRXXD18CHO2145602NNNN24168151239757_V2_1</isda:level0_dir_name>
+                <isda:imaging_orbit_number>21455</isda:imaging_orbit_number>
+                <isda:dumping_orbit_number>21456</isda:dumping_orbit_number>
+                <isda:line_exposure_duration unit="ms">53.060</isda:line_exposure_duration>
+                <isda:gain>g2</isda:gain>
+                <isda:exposure>e1</isda:exposure>
+                <isda:exposure_duration unit="ms">1</isda:exposure_duration>
+                <isda:detector_temperature unit="K">88.970</isda:detector_temperature>
+                <isda:tertiary_mirror_temperature unit="degC">-36.584</isda:tertiary_mirror_temperature>
+                <isda:spectrometer_casing_temperature unit="degC">-39.677</isda:spectrometer_casing_temperature>
+                <isda:dewar_vw_temperature unit="degC">-45.823</isda:dewar_vw_temperature>
+                <isda:detector_pixel_width unit="micrometer">30</isda:detector_pixel_width>            
+                <isda:focal_length unit="mm">74.999</isda:focal_length>
+                <isda:reference_data_used>SELENE</isda:reference_data_used>
+                <isda:orbit_limb_direction>Descending</isda:orbit_limb_direction>
+                <isda:spacecraft_yaw_direction>False</isda:spacecraft_yaw_direction>
+                <isda:spacecraft_altitude unit="km">103.38</isda:spacecraft_altitude>
+                <isda:pixel_resolution unit="m/pixel">82.70</isda:pixel_resolution>
+                <isda:roll unit="deg">0.001829</isda:roll>
+                <isda:pitch unit="deg">-0.184603</isda:pitch>
+                <isda:yaw unit="deg">-0.000595</isda:yaw>
+                <isda:sun_azimuth unit="deg">193.459549</isda:sun_azimuth>
+                <isda:sun_elevation unit="deg">53.752581</isda:sun_elevation>
+                <isda:solar_incidence unit="deg">36.247419</isda:solar_incidence>
+                <isda:projection>Selenographic</isda:projection>
+                <isda:area>Equatorial</isda:area>
+            </isda:Product_Parameters>
+            <isda:Geometry_Parameters>
+                <isda:System_Level_Coordinates>
+                    <isda:upper_left_latitude unit="deg">54.856290</isda:upper_left_latitude>
+                    <isda:upper_left_longitude unit="deg">68.771862</isda:upper_left_longitude>
+                    <isda:upper_right_latitude unit="deg">54.849544</isda:upper_right_latitude>
+                    <isda:upper_right_longitude unit="deg">69.831520</isda:upper_right_longitude>
+                    <isda:lower_left_latitude unit="deg">18.833621</isda:lower_left_latitude>
+                    <isda:lower_left_longitude unit="deg">68.388471</isda:lower_left_longitude>
+                    <isda:lower_right_latitude unit="deg">18.829373</isda:lower_right_latitude>
+                    <isda:lower_right_longitude unit="deg">69.108334</isda:lower_right_longitude>
+                </isda:System_Level_Coordinates>    
+                <isda:Refined_Corner_Coordinates>
+                    <isda:upper_left_latitude unit="deg">55.195843</isda:upper_left_latitude>
+                    <isda:upper_left_longitude unit="deg">68.778073</isda:upper_left_longitude>
+                    <isda:upper_right_latitude unit="deg">55.183338</isda:upper_right_latitude>
+                    <isda:upper_right_longitude unit="deg">69.871921</isda:upper_right_longitude>
+                    <isda:lower_left_latitude unit="deg">19.204878</isda:lower_left_latitude>
+                    <isda:lower_left_longitude unit="deg">68.392450</isda:lower_left_longitude>
+                    <isda:lower_right_latitude unit="deg">19.194904</isda:lower_right_latitude>
+                    <isda:lower_right_longitude unit="deg">69.129553</isda:lower_right_longitude>
+                </isda:Refined_Corner_Coordinates>
+            </isda:Geometry_Parameters>
+        </Mission_Area>
+    </Observation_Area>
+    <File_Area_Observational>
+        <File>
+            <file_name>ch2_iirs_sample_200x200x16.qub</file_name>
+            <creation_date_time>2024-07-20T12:21:07</creation_date_time>
+            <file_size unit="byte">2560000</file_size>
+            <!-- md5_checksum omitted for test fixture -->
+            <comment>
+                This File contains the radiance spectral image
+                md5_checksum is provided for ensuring data integrity when users are downloading the data.
+            </comment>
+        </File>
+        <Array_3D_Spectrum>
+            
+            
+            <name>IIRS Image Cube</name>
+            <local_identifier>SPECTRAL_QUBE_OBJECT</local_identifier>
+            <offset unit="byte">0</offset>
+            <axes>3</axes>
+            <axis_index_order>Last Index Fastest</axis_index_order>
+	      <description>
+               	The core of the image cube has 256 spectral bands.
+                Bands are stored sequentially in the cube.
+	      </description>
+	      <Element_Array>
+                <data_type>IEEE754LSBSingle</data_type>
+                <unit>µW/cm**2/sr/µm</unit>
+              </Element_Array>
+              <Axis_Array>
+                <axis_name>BAND</axis_name>
+                <elements>16</elements>
+                <sequence_number>1</sequence_number>            
+                <Band_Bin_Set>
+		
+                    <Band_Bin>
+                        <band_number>1</band_number>
+                        <band_width unit="nm">19.8</band_width>
+                        <center_wavelength unit="nm">712.3</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>2</band_number>
+                        <band_width unit="nm">19.9</band_width>
+                        <center_wavelength unit="nm">729.2</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>3</band_number>
+                        <band_width unit="nm">20.0</band_width>
+                        <center_wavelength unit="nm">746.0</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>4</band_number>
+                        <band_width unit="nm">20.1</band_width>
+                        <center_wavelength unit="nm">762.9</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>5</band_number>
+                        <band_width unit="nm">20.2</band_width>
+                        <center_wavelength unit="nm">779.7</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>6</band_number>
+                        <band_width unit="nm">20.3</band_width>
+                        <center_wavelength unit="nm">796.6</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>7</band_number>
+                        <band_width unit="nm">20.4</band_width>
+                        <center_wavelength unit="nm">813.4</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>8</band_number>
+                        <band_width unit="nm">20.4</band_width>
+                        <center_wavelength unit="nm">830.3</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>9</band_number>
+                        <band_width unit="nm">20.5</band_width>
+                        <center_wavelength unit="nm">847.2</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>10</band_number>
+                        <band_width unit="nm">20.5</band_width>
+                        <center_wavelength unit="nm">864.0</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>11</band_number>
+                        <band_width unit="nm">20.6</band_width>
+                        <center_wavelength unit="nm">880.9</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>12</band_number>
+                        <band_width unit="nm">20.6</band_width>
+                        <center_wavelength unit="nm">897.7</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>13</band_number>
+                        <band_width unit="nm">20.6</band_width>
+                        <center_wavelength unit="nm">914.6</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>14</band_number>
+                        <band_width unit="nm">20.7</band_width>
+                        <center_wavelength unit="nm">931.4</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>15</band_number>
+                        <band_width unit="nm">20.7</band_width>
+                        <center_wavelength unit="nm">948.3</center_wavelength>
+                    </Band_Bin>
+
+                    <Band_Bin>
+                        <band_number>16</band_number>
+                        <band_width unit="nm">20.8</band_width>
+                        <center_wavelength unit="nm">965.1</center_wavelength>
+                    </Band_Bin>
+                </Band_Bin_Set>
+                
+              </Axis_Array>
+              <Axis_Array>
+                <axis_name>LINE</axis_name>
+                <elements>200</elements>
+                <sequence_number>2</sequence_number>
+              </Axis_Array>
+              <Axis_Array>
+                <axis_name>SAMPLE</axis_name>
+                <elements>200</elements>
+                <sequence_number>3</sequence_number>
+              </Axis_Array>
+        </Array_3D_Spectrum>
+    </File_Area_Observational>
+</Product_Observational>
