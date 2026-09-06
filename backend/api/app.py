@@ -245,17 +245,6 @@ def create_overlap_visualization(
 # ---------------------------------------------------------------------------
 
 
-@app.get("/", response_class=HTMLResponse)
-async def get_index():
-    """Return frontend/index.html as HTMLResponse."""
-    index_file = FRONTEND_DIR / "index.html"
-    if not index_file.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="frontend/index.html not found",
-        )
-    return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
-
 
 @app.post("/api/upload")
 async def upload_images(
@@ -871,6 +860,10 @@ if FRONTEND_DIST.exists():
     _assets_dir = FRONTEND_DIST / "assets"
     if _assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="frontend-assets")
+
+    # NOTE: frontend/public/ assets (ref_lunar.png, tgt_lunar.png, favicon.svg, icons.svg)
+    # are automatically copied by Vite into frontend/dist/ at build time.
+    # The SPA catch-all below serves them directly from dist/.
 
     @app.get("/favicon.svg", include_in_schema=False)
     async def favicon():
