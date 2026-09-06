@@ -156,3 +156,29 @@ class PDS4Metadata:
     tmc2_product_params: dict[str, Any] | None = None
     tmc2_geometry_params: dict[str, Any] | None = None
     wavelength_info: str | None = None
+
+
+@dataclass(frozen=False)
+class PreprocessedImage:
+    """Preprocessed 2-D float32 image ready for feature detection.
+
+    Attributes
+    ----------
+    data : np.ndarray
+        Preprocessed 2-D array of float32 values in [0, 1].
+    instrument : str
+        Source instrument identifier (e.g. "TMC-2", "OHRC", "IIRS").
+    original_shape : tuple
+        Shape of the input raster prior to preprocessing.
+    pixel_resolution : float
+        Effective spatial resolution in meters per pixel.
+    preprocessing_steps : list[str]
+        Ordered audit trail of preprocessing steps applied.
+    """
+
+    data: np.ndarray
+    instrument: str
+    original_shape: tuple
+    pixel_resolution: float
+    preprocessing_steps: list[str] = field(default_factory=list)
+
