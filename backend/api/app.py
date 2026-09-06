@@ -142,21 +142,26 @@ def normalize_for_display(img: np.ndarray) -> np.ndarray:
             else:
                 arr = arr[:, :, 0]
 
-    # 2D Grayscale normalization
-    arr = arr.astype(np.float32)
-    valid = np.isfinite(arr)
-    if not np.any(valid):
-        return np.zeros(arr.shape, dtype=np.uint8)
+    # 2D Grayscale normalization — ignore zero-padded borders from warping
+    arr = arr.astype(np.float64)
 
-    vmin = float(np.min(arr[valid]))
-    vmax = float(np.max(arr[valid]))
-
-    if vmax > vmin:
-        norm = (arr - vmin) / (vmax - vmin) * 255.0
+    mask = arr > 0
+    if mask.any():
+        valid_pixels = arr[mask]
+        vmin = float(np.percentile(valid_pixels, 1))
+        vmax = float(np.percentile(valid_pixels, 99))
     else:
-        norm = np.zeros_like(arr)
+        vmin, vmax = 0.0, 1.0
 
-    return np.clip(norm, 0, 255).astype(np.uint8)
+    if vmax - vmin < 1e-10:
+        vmin = float(arr.min())
+        vmax = float(arr.max())
+
+    if vmax - vmin < 1e-10:
+        return np.zeros_like(arr, dtype=np.uint8)
+
+    normalized = np.clip((arr - vmin) / (vmax - vmin) * 255, 0, 255)
+    return normalized.astype(np.uint8)
 
 
 def draw_matches_image(
