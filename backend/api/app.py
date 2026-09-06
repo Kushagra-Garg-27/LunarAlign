@@ -83,6 +83,14 @@ if FRONTEND_DIR.exists():
 JOBS: dict[str, dict[str, Any]] = {}
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------------------------
@@ -264,12 +272,20 @@ async def upload_images(
     # Load reference
     ref_inst = "TMC-2"
     if detect_pds4(ref_path):
-        ref_arr = load_pds4_image(ref_path)
         try:
-            m = extract_pds4_metadata(ref_path)
-            ref_inst = m.instrument if hasattr(m, "instrument") else "TMC-2"
-        except Exception:
-            pass
+            ref_arr = load_pds4_image(ref_path)
+            try:
+                m = extract_pds4_metadata(ref_path)
+                ref_inst = m.instrument if hasattr(m, "instrument") else "TMC-2"
+            except Exception:
+                pass
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"PDS4 label uploaded without companion binary data file. "
+                       f"Please upload both the .xml label AND the .img/.qub data file together, "
+                       f"or convert to PNG/TIFF first. Error: {str(e)}",
+            )
     else:
         ref_arr = cv2.imread(str(ref_path), cv2.IMREAD_UNCHANGED)
         if ref_arr is None:
@@ -279,12 +295,20 @@ async def upload_images(
     # Load target
     tgt_inst = "OHRC"
     if detect_pds4(tgt_path):
-        tgt_arr = load_pds4_image(tgt_path)
         try:
-            m = extract_pds4_metadata(tgt_path)
-            tgt_inst = m.instrument if hasattr(m, "instrument") else "OHRC"
-        except Exception:
-            pass
+            tgt_arr = load_pds4_image(tgt_path)
+            try:
+                m = extract_pds4_metadata(tgt_path)
+                tgt_inst = m.instrument if hasattr(m, "instrument") else "OHRC"
+            except Exception:
+                pass
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"PDS4 label uploaded without companion binary data file. "
+                       f"Please upload both the .xml label AND the .img/.qub data file together, "
+                       f"or convert to PNG/TIFF first. Error: {str(e)}",
+            )
     else:
         tgt_arr = cv2.imread(str(tgt_path), cv2.IMREAD_UNCHANGED)
         if tgt_arr is None:
