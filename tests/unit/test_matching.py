@@ -1,4 +1,4 @@
-﻿"""
+"""
 SIH26166 — Tests for Stage 3 Feature Detection, Description & Matching.
 
 Validates SIFT, Grid-Bucketed SIFT, MIND descriptors, FLANN/BF matching,
@@ -17,11 +17,8 @@ from backend.matching import (
     MatchResult,
     compute_mind_descriptor,
     compute_spatial_entropy,
-    cross_check_matches,
     detect_sift_bucketed,
     detect_sift_features,
-    match_features_bf,
-    match_features_flann,
     match_mind_descriptors,
     match_pair,
     reject_outliers_affine,
@@ -201,71 +198,6 @@ class TestMindDescriptor:
         with pytest.raises(ValueError, match="channel mismatch"):
             match_mind_descriptors(m1, m2)
 
-
-# ---------------------------------------------------------------------------
-# Feature Matcher Tests
-# ---------------------------------------------------------------------------
-
-class TestFeatureMatcher:
-    """Tests for backend.matching.feature_matcher (Module 08)."""
-
-    def test_flann_matches_valid_descriptors(self):
-        """FLANN returns matches for overlapping descriptor sets."""
-        np.random.seed(123)
-        desc1 = np.random.rand(50, 128).astype(np.float32)
-        desc2 = desc1.copy() + np.random.normal(0, 0.01, desc1.shape).astype(np.float32)
-
-        matches = match_features_flann(desc1, desc2, ratio_threshold=0.85)
-        assert len(matches) > 0
-        assert all(isinstance(m, cv2.DMatch) for m in matches)
-
-    def test_ratio_test_filters_ambiguous_matches(self):
-        """Strict ratio threshold filters out ambiguous nearest neighbors."""
-        np.random.seed(42)
-        desc1 = np.random.rand(60, 128).astype(np.float32)
-        desc2 = np.random.rand(60, 128).astype(np.float32)
-
-        matches_loose = match_features_flann(desc1, desc2, ratio_threshold=0.99)
-        matches_strict = match_features_flann(desc1, desc2, ratio_threshold=0.50)
-
-        assert len(matches_loose) >= len(matches_strict)
-
-    def test_cross_check_reduces_matches(self):
-        """Mutual cross-checking filters one-way asymmetric matches."""
-        np.random.seed(42)
-        desc1 = np.random.rand(40, 128).astype(np.float32)
-        desc2 = np.random.rand(40, 128).astype(np.float32)
-
-        m_ab = match_features_bf(desc1, desc2, ratio_threshold=0.9)
-        m_ba = match_features_bf(desc2, desc1, ratio_threshold=0.9)
-
-        mutual = cross_check_matches(m_ab, m_ba)
-        assert len(mutual) <= len(m_ab)
-
-    def test_bf_matcher_fallback(self):
-        """Brute-Force matcher functions correctly with ratio test."""
-        np.random.seed(99)
-        desc1 = np.random.rand(20, 128).astype(np.float32)
-        desc2 = desc1.copy()
-
-        matches = match_features_bf(desc1, desc2, ratio_threshold=0.8)
-        assert len(matches) > 0
-
-    def test_empty_descriptors_return_empty(self):
-        """Empty descriptors return empty match list without error."""
-        d1 = np.zeros((0, 128), dtype=np.float32)
-        d2 = np.zeros((10, 128), dtype=np.float32)
-        assert match_features_flann(d1, d2) == []
-        assert match_features_bf(d1, d2) == []
-
-    def test_identical_descriptors_zero_distance(self):
-        """Identical descriptors yield distance ~ 0."""
-        d1 = np.ones((5, 128), dtype=np.float32)
-        d2 = np.vstack([d1, np.zeros((5, 128), dtype=np.float32)])
-
-        matches = match_features_bf(d1, d2, ratio_threshold=0.8)
-        if matches:
-            assert matches[0].distance == pytest.approx(0.0, abs=1e-4)
 
 
 # ---------------------------------------------------------------------------

@@ -41,7 +41,14 @@ def to_feature_image(raw: RawImage) -> FeatureImage:
     Returns
     -------
     FeatureImage
-        2-D float32 array suitable for feature extraction.
+        2-D float32 array in [0, 255] range suitable for feature extraction.
+
+    Notes
+    -----
+    A min-max dynamic range stretch is applied when pixel values fall
+    outside the [0, 255] range (e.g. uint16 TMC-2 data with values in
+    [500, 40000]).  Without this stretch, ``prepare_for_sift()`` would
+    clip all values to 255, destroying contrast information.
     """
     data = raw.data
     num_bands = raw.num_bands
@@ -67,6 +74,12 @@ def to_feature_image(raw: RawImage) -> FeatureImage:
         out = np.mean(data.astype(np.float64), axis=2).astype(np.float32)
         method = f"band_mean_{num_bands}bands"
 
+    # Dynamic range normalization: stretch to [0, 255] if needed.
+    # This is critical for uint16 data (e.g. TMC-2 with values in
+    # [500, 40000]) that would otherwise be clipped to 255 by
+    # prepare_for_sift(), destroying all contrast.
+    out = _normalize_dynamic_range(out)
+
     return FeatureImage(
         data=out,
         width=raw.width,
@@ -74,6 +87,33 @@ def to_feature_image(raw: RawImage) -> FeatureImage:
         source_dtype=raw.dtype,
         conversion_method=method,
     )
+
+
+def _normalize_dynamic_range(img: np.ndarray) -> np.ndarray:
+    """Stretch pixel values to [0, 255] float32 if they fall outside uint8 range.
+
+    This handles high-dynamic-range inputs (uint16 TMC-2 data, float32
+    data with arbitrary range) by applying a linear min-max stretch.
+    For data already within [0, 255], this is effectively a no-op
+    (values are preserved as-is apart from NaN/inf cleanup).
+
+    Equivalent to the ``normalize_intensity(method="minmax")`` fix in
+    ``normalize.py`` but scaled to [0, 255] for direct SIFT consumption.
+    """
+    arr = np.nan_to_num(img, nan=0.0, posinf=0.0, neginf=0.0)
+    lo = float(arr.min())
+    hi = float(arr.max())
+
+    # Only stretch if data exceeds uint8 range
+    if lo < 0.0 or hi > 255.0:
+        if lo == hi:
+            # Constant image outside [0, 255] — no contrast to stretch
+            return np.zeros_like(arr, dtype=np.float32)
+        stretched = (arr - lo) / (hi - lo) * 255.0
+        return np.clip(stretched, 0.0, 255.0).astype(np.float32)
+
+    # Data is within [0, 255] — preserve as-is
+    return arr.astype(np.float32)
 
 
 def _rgb_to_gray(rgb: np.ndarray) -> np.ndarray:

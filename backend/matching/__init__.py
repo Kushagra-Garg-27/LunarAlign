@@ -1,4 +1,4 @@
-﻿"""
+"""
 SIH26166 — Matching package.
 
 Provides SIFT, Grid-Bucketed SIFT, MIND cross-modal descriptors, FLANN / BF matching,
@@ -6,11 +6,6 @@ and MAGSAC++ / Affine outlier rejection for Chandrayaan-2 lunar imagery registra
 """
 
 from backend.matching.datamodel import MatchResult
-from backend.matching.feature_matcher import (
-    cross_check_matches,
-    match_features_bf,
-    match_features_flann,
-)
 from backend.matching.flann import flann_knn_match
 from backend.matching.match_pipeline import (
     compute_spatial_entropy,
@@ -36,9 +31,6 @@ __all__ = [
     "detect_sift_bucketed",
     "compute_mind_descriptor",
     "match_mind_descriptors",
-    "match_features_flann",
-    "match_features_bf",
-    "cross_check_matches",
     "reject_outliers_magsac",
     "reject_outliers_affine",
     "match_pair",

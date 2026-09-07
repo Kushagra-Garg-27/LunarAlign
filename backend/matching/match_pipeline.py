@@ -1,4 +1,4 @@
-﻿"""
+"""
 SIH26166 — Matching Pipeline Orchestrator.
 
 Orchestrates multi-modal feature detection (SIFT / Grid-Bucketed SIFT / MIND),
@@ -14,13 +14,54 @@ import cv2
 import numpy as np
 
 from backend.matching.datamodel import MatchResult
-from backend.matching.feature_matcher import match_features_flann
 from backend.matching.mind_descriptor import compute_mind_descriptor, match_mind_descriptors
 from backend.matching.outlier_rejection import reject_outliers_affine, reject_outliers_magsac
 from backend.matching.sift_detector import detect_sift_bucketed, detect_sift_features
 from backend.preprocessing.illumination import compute_phase_congruency
 
 logger = logging.getLogger("sih26166.matching.pipeline")
+
+# FLANN parameters for float descriptors (SIFT)
+_FLANN_INDEX_KDTREE = 1
+_DEFAULT_INDEX_PARAMS = {"algorithm": _FLANN_INDEX_KDTREE, "trees": 5}
+_DEFAULT_SEARCH_PARAMS = {"checks": 50}
+
+
+def _match_features_flann(
+    desc1: np.ndarray,
+    desc2: np.ndarray,
+    ratio_threshold: float = 0.75,
+) -> list[cv2.DMatch]:
+    """FLANN-based 2-NN matching with Lowe ratio test.
+
+    Inlined from the former ``feature_matcher`` module so that
+    ``match_pipeline`` remains self-contained after the parallel
+    pipeline cleanup.
+    """
+    if desc1 is None or desc2 is None or len(desc1) == 0 or len(desc2) < 2:
+        return []
+
+    d1 = desc1.astype(np.float32)
+    d2 = desc2.astype(np.float32)
+
+    try:
+        matcher = cv2.FlannBasedMatcher(_DEFAULT_INDEX_PARAMS, _DEFAULT_SEARCH_PARAMS)
+        knn_matches = matcher.knnMatch(d1, d2, k=2)
+    except cv2.error as exc:
+        logger.warning("FLANN matching failed (%s), falling back to BFMatcher.", exc)
+        bf = cv2.BFMatcher(normType=cv2.NORM_L2, crossCheck=False)
+        try:
+            knn_matches = bf.knnMatch(d1, d2, k=2)
+        except cv2.error:
+            return []
+
+    good: list[cv2.DMatch] = []
+    for pair in knn_matches:
+        if len(pair) == 2:
+            m, n = pair
+            if m.distance < ratio_threshold * n.distance:
+                good.append(m)
+    return good
 
 
 def compute_spatial_entropy(
@@ -122,7 +163,7 @@ def match_pair(
             kp1, desc1 = detect_sift_features(in_img1)
             kp2, desc2 = detect_sift_features(in_img2)
 
-        raw_matches = match_features_flann(desc1, desc2, ratio_threshold=ratio_threshold)
+        raw_matches = _match_features_flann(desc1, desc2, ratio_threshold=ratio_threshold)
 
     elif method_norm == "mind":
         mind1 = compute_mind_descriptor(in_img1)
@@ -138,7 +179,7 @@ def match_pair(
         # Run bucketed SIFT
         k1_sift, d1_sift = detect_sift_bucketed(in_img1)
         k2_sift, d2_sift = detect_sift_bucketed(in_img2)
-        sift_matches = match_features_flann(d1_sift, d2_sift, ratio_threshold=ratio_threshold)
+        sift_matches = _match_features_flann(d1_sift, d2_sift, ratio_threshold=ratio_threshold)
 
         # Run MIND
         mind1 = compute_mind_descriptor(in_img1)

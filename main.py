@@ -44,4 +44,4 @@ if __name__ == "__main__":
 
     print()
     threading.Thread(target=open_browser, daemon=True).start()
-    uvicorn.run("backend.api.app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
