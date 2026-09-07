@@ -9,7 +9,8 @@ Supported formats
 - **TIFF** — attempted first with rasterio (which supports multi-band
   GeoTIFF and scientific rasters), falling back to Pillow for simple
   TIFF files.
-- **PDS4 XML** — loaded via rasterio GDAL PDS4 driver (TMC-2 and OHRC).
+- **PDS4 XML** — loaded via rasterio GDAL PDS4 driver (TMC-2 and OHRC)
+  or hyperspectral solar band-reduction pipeline (IIRS).
 
 Design notes
 ------------
@@ -77,12 +78,12 @@ def load_image(path: str | Path) -> RawImage:
 
 
 # ---------------------------------------------------------------------------
-# PDS4 loader (TMC-2 and OHRC)
+# PDS4 loader (TMC-2, OHRC, and IIRS)
 # ---------------------------------------------------------------------------
 
 
 def _load_pds4(path: Path) -> RawImage:
-    """Load a PDS4 Product_Observational raster image (TMC-2 and OHRC).
+    """Load a PDS4 Product_Observational raster image (TMC-2, OHRC, and IIRS).
 
     Parameters
     ----------
@@ -100,7 +101,14 @@ def _load_pds4(path: Path) -> RawImage:
         If the file is not a valid PDS4 label or the instrument is not supported.
     """
     import xml.etree.ElementTree as ET
+    from backend.preprocessing.band_reduction import (
+        reduce_bands_mean,
+        select_bands,
+        select_solar_reflective_bands,
+    )
+    from backend.preprocessing.grayscale import _normalize_dynamic_range
     from backend.preprocessing.pds4 import (
+        extract_iirs_band_wavelengths,
         identify_instrument,
         is_pds4_label,
         load_pds4_raster,
@@ -115,14 +123,74 @@ def _load_pds4(path: Path) -> RawImage:
         raise ValueError(f"Malformed XML in {path.name}: {exc}") from exc
 
     instrument = identify_instrument(tree)
-    if instrument not in ("TMC2", "OHRC"):
+    if instrument not in ("TMC2", "OHRC", "IIRS"):
         raise ValueError(
-            f"Unsupported PDS4 instrument: '{instrument}'. Only TMC-2 and OHRC products are supported in this pipeline."
+            f"Unsupported PDS4 instrument: '{instrument}'. Only TMC-2, OHRC, and IIRS products are supported in this pipeline."
         )
 
     raw_img = load_pds4_raster(path)
     raw_img.metadata["instrument"] = instrument
-    return raw_img
+
+    if instrument in ("TMC2", "OHRC"):
+        return raw_img
+
+    # --- IIRS multi-band hyperspectral reduction path ---
+    # 1. Extract per-band wavelength metadata and determine solar-reflective bands (< 2500nm).
+    wavelengths = extract_iirs_band_wavelengths(path)
+    if not wavelengths:
+        raise ValueError(
+            f"IIRS product '{path.name}' has no Band_Bin wavelength metadata; cannot determine solar-reflective bands."
+        )
+    solar_indices = select_solar_reflective_bands(wavelengths)
+    if not solar_indices:
+        raise ValueError(
+            f"{path.name}: No solar-reflective bands found below cutoff."
+        )
+
+    # 2. Subset spectral cube to solar-reflective bands.
+    # Note on axis ordering: load_pds4_raster() returns raw_img.data in (H, W, C)
+    # bands-last layout (per the RawImage dataclass specification). However,
+    # select_bands() and reduce_bands_mean() expect BSQ layout (bands, H, W).
+    # We transpose the data from (H, W, C) to (C, H, W) before subsetting.
+    cube_bhw = np.moveaxis(raw_img.data, -1, 0)
+    solar_cube = select_bands(cube_bhw, solar_indices)
+
+    # 3. Reduce 3D spectral cube to single 2D image.
+    # Stated reasoning for reduction method choice (reduce_bands_mean vs reduce_bands_pca):
+    # - reduce_bands_mean() collapses bands via per-pixel mean averaging into a strictly 2D
+    #   (H, W) array. Mean radiance preserves physical additive energy and positive monotonicity,
+    #   ensuring stable spatial gradients for classical feature detectors (SIFT).
+    # - In contrast, reduce_bands_pca() returns (n_components, H, W) (a 3D array requiring component
+    #   selection), has eigenvector sign ambiguity across different views/transforms (which can
+    #   invert contrast and break SIFT descriptors), and can yield negative unbounded values.
+    # - Therefore, reduce_bands_mean() is directly compatible with the 2D single-channel FeatureImage
+    #   and downstream registration pipeline.
+    reduced_2d = reduce_bands_mean(solar_cube)
+
+    # 4. Dynamic range normalization.
+    # Stated reasoning for normalization placement (after band reduction vs before):
+    # - Applying dynamic range normalization (_normalize_dynamic_range) AFTER band reduction
+    #   preserves true physical relative spectral radiance across bands during averaging and
+    #   averages out uncorrelated per-band sensor noise (enhancing SNR).
+    # - Normalizing before reduction would artificially re-scale individual bands independently,
+    #   amplifying noise in low-signal bands and distorting physical spectral weighting.
+    # - Stretching the single aggregated 2D array to [0, 255] float32 produces the exact contrast
+    #   range expected downstream by prepare_for_sift() with minimal computational overhead.
+    normalized_2d = _normalize_dynamic_range(reduced_2d)
+
+    metadata = dict(raw_img.metadata)
+    metadata["solar_reflective_bands"] = solar_indices
+    metadata["band_reduction_method"] = "mean"
+
+    return RawImage(
+        data=normalized_2d,
+        width=raw_img.width,
+        height=raw_img.height,
+        num_bands=1,
+        dtype=normalized_2d.dtype,
+        source_format="PDS4",
+        metadata=metadata,
+    )
 
 
 # ---------------------------------------------------------------------------

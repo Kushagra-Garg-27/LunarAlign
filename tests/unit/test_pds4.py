@@ -802,3 +802,47 @@ class TestExtractIIRSBandWavelengths:
         bands = extract_iirs_band_wavelengths(TMC2_XML)
         assert bands == []
 
+    def test_missing_center_wavelength_raises_valueerror(self, tmp_path):
+        """Band_Bin with missing center_wavelength must raise ValueError."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+        import re
+
+        txt = IIRS_XML.read_text(encoding="utf-8")
+        bad_txt = re.sub(r"<(?:pds:)?center_wavelength[^>]*>.*?</(?:pds:)?center_wavelength>", "", txt, count=1)
+        bad_xml = tmp_path / "missing_cwl.xml"
+        bad_xml.write_text(bad_txt, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="missing required 'center_wavelength'"):
+            extract_iirs_band_wavelengths(bad_xml)
+
+    def test_missing_band_width_raises_valueerror(self, tmp_path):
+        """Band_Bin with missing band_width must raise ValueError."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+        import re
+
+        txt = IIRS_XML.read_text(encoding="utf-8")
+        bad_txt = re.sub(r"<(?:pds:)?band_width[^>]*>.*?</(?:pds:)?band_width>", "", txt, count=1)
+        bad_xml = tmp_path / "missing_bw.xml"
+        bad_xml.write_text(bad_txt, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="missing required 'band_width'"):
+            extract_iirs_band_wavelengths(bad_xml)
+
+    def test_unparseable_center_wavelength_raises_valueerror(self, tmp_path):
+        """Band_Bin with non-numeric center_wavelength must raise ValueError."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+        import re
+
+        txt = IIRS_XML.read_text(encoding="utf-8")
+        bad_txt = re.sub(
+            r"<(?:pds:)?center_wavelength[^>]*>.*?</(?:pds:)?center_wavelength>",
+            "<center_wavelength unit=\"nm\">NOT_A_FLOAT</center_wavelength>",
+            txt,
+            count=1,
+        )
+        bad_xml = tmp_path / "bad_cwl.xml"
+        bad_xml.write_text(bad_txt, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="unparseable center_wavelength"):
+            extract_iirs_band_wavelengths(bad_xml)
+

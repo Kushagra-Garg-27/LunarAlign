@@ -171,8 +171,10 @@ def select_solar_reflective_bands(
       remote-sensing literature — it is NOT independently validated against real
       Chandrayaan-2 thermal-band data, because no such data exists in this
       project's fixtures yet.
-    - This function does not currently exclude known narrow absorption features
-      (e.g. ~2800-3000nm OH/H2O band) within the solar-reflective range — that
+    - While the default cutoff (2500nm) naturally excludes wavelengths above
+      2500nm, if ``cutoff_nm`` is configured above ~3000nm, note that this
+      function does not specifically notch-filter or exclude known narrow
+      absorption features (such as the ~2800-3000nm OH/H2O band) — that
       refinement is a possible future improvement, not implemented here.
 
     Parameters

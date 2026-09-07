@@ -390,10 +390,30 @@ def extract_iirs_band_wavelengths(xml_path: str | Path) -> list[dict[str, Any]]:
             bw_el = bb.find("band_width")
 
         band_num = int(num_el.text.strip()) if (num_el is not None and num_el.text) else idx
-        cwl = float(cwl_el.text.strip()) if (cwl_el is not None and cwl_el.text) else 0.0
-        cwl_unit = cwl_el.attrib.get("unit") if cwl_el is not None else None
-        bw = float(bw_el.text.strip()) if (bw_el is not None and bw_el.text) else 0.0
-        bw_unit = bw_el.attrib.get("unit") if bw_el is not None else None
+
+        if cwl_el is None or cwl_el.text is None or not cwl_el.text.strip():
+            raise ValueError(
+                f"{xml_path.name}: Band_Bin for band {band_num} is missing required 'center_wavelength'"
+            )
+        try:
+            cwl = float(cwl_el.text.strip())
+        except ValueError as exc:
+            raise ValueError(
+                f"{xml_path.name}: Band_Bin for band {band_num} has unparseable center_wavelength {cwl_el.text!r}"
+            ) from exc
+        cwl_unit = cwl_el.attrib.get("unit")
+
+        if bw_el is None or bw_el.text is None or not bw_el.text.strip():
+            raise ValueError(
+                f"{xml_path.name}: Band_Bin for band {band_num} is missing required 'band_width'"
+            )
+        try:
+            bw = float(bw_el.text.strip())
+        except ValueError as exc:
+            raise ValueError(
+                f"{xml_path.name}: Band_Bin for band {band_num} has unparseable band_width {bw_el.text!r}"
+            ) from exc
+        bw_unit = bw_el.attrib.get("unit")
 
         results.append({
             "band_number": band_num,

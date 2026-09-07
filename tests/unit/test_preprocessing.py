@@ -572,6 +572,69 @@ OHRC_FIXTURE_XML = PDS4_FIXTURES / "ohrc" / "ch2_ohrc_sample_500x500.xml"
 IIRS_FIXTURE_XML = PDS4_FIXTURES / "iirs" / "ch2_iirs_sample_200x200x16.xml"
 
 
+class TestPDS4LoadImage:
+    """Tests for PDS4 XML loading through backend.preprocessing.io.load_image."""
+
+    def test_load_pds4_iirs_valid_2d(self):
+        """Loading real IIRS PDS4 XML through load_image produces a valid 2D single-channel image."""
+        from backend.preprocessing.io import load_image
+        from backend.preprocessing.datamodel import RawImage
+
+        raw = load_image(IIRS_FIXTURE_XML)
+        assert isinstance(raw, RawImage)
+        assert raw.data.ndim == 2, f"Expected 2D image array, got {raw.data.ndim}D shape {raw.data.shape}"
+        assert raw.data.shape == (200, 200), f"Expected shape (200, 200), got {raw.data.shape}"
+        assert raw.num_bands == 1, f"Expected num_bands == 1, got {raw.num_bands}"
+        assert raw.width == 200
+        assert raw.height == 200
+        assert raw.dtype == np.float32, f"Expected float32 dtype, got {raw.dtype}"
+        assert raw.data.dtype == np.float32
+        assert raw.source_format == "PDS4"
+        assert raw.metadata.get("instrument") == "IIRS"
+        assert raw.metadata.get("band_reduction_method") == "mean"
+        assert "solar_reflective_bands" in raw.metadata
+
+        min_val = float(raw.data.min())
+        max_val = float(raw.data.max())
+        assert min_val >= 0.0, f"Expected min >= 0.0, got {min_val}"
+        assert max_val <= 255.0, f"Expected max <= 255.0, got {max_val}"
+        assert max_val > min_val, f"Expected non-trivial dynamic range, got min={min_val}, max={max_val}"
+
+    def test_load_pds4_unsupported_instrument_raises(self, tmp_path):
+        """PDS4 label with unsupported instrument raises ValueError from load_image."""
+        from backend.preprocessing.io import load_image
+        import re
+
+        txt = TMC2_FIXTURE_XML.read_text(encoding="utf-8")
+        bad_txt = re.sub(r"<name>terrain mapping camera</name>", "<name>unknown sensor</name>", txt, flags=re.IGNORECASE)
+        bad_xml = tmp_path / "unknown_inst.xml"
+        bad_xml.write_text(bad_txt, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Unsupported PDS4 instrument: 'UNKNOWN'"):
+            load_image(bad_xml)
+
+    def test_load_pds4_iirs_missing_wavelength_metadata_raises(self, tmp_path):
+        """IIRS product with no Band_Bin metadata must raise ValueError rather than defaulting to all bands."""
+        from backend.preprocessing.io import load_image
+        import re
+        import shutil
+
+        # Copy binary qub file next to temporary XML so raster loading succeeds
+        iirs_qub = PDS4_FIXTURES / "iirs" / "ch2_iirs_sample_200x200x16.qub"
+        shutil.copyfile(iirs_qub, tmp_path / iirs_qub.name)
+
+        txt = IIRS_FIXTURE_XML.read_text(encoding="utf-8")
+        bad_txt = re.sub(r"<Band_Bin_Set>.*?</Band_Bin_Set>", "", txt, flags=re.DOTALL)
+        bad_xml = tmp_path / "no_band_bins.xml"
+        bad_xml.write_text(bad_txt, encoding="utf-8")
+
+        with pytest.raises(
+            ValueError,
+            match="has no Band_Bin wavelength metadata; cannot determine solar-reflective bands",
+        ):
+            load_image(bad_xml)
+
+
 class TestNormalize:
     """Tests for backend.preprocessing.normalize (Module 01)."""
 
