@@ -1,4 +1,4 @@
-﻿"""
+"""
 SIH26166 -- PDS4 label parser and raster loader.
 
 Handles Chandrayaan-2 PDS4 products for three instruments:
@@ -145,7 +145,7 @@ def scan_pds4_labels(root_dir: str | Path) -> list[Path]:
     return sorted(results)
 
 
-def identify_instrument(tree: ET.ElementTree) -> str:
+def identify_instrument(tree: Any) -> str:
     """Return the canonical instrument identifier from a parsed PDS4 label tree.
 
     Reads Observation_Area/Observing_System/Observing_System_Component entries,
@@ -153,7 +153,9 @@ def identify_instrument(tree: ET.ElementTree) -> str:
 
     Returns one of "TMC2", "OHRC", "IIRS", or "UNKNOWN".
     """
-    root = tree.getroot()
+    root = tree.getroot() if hasattr(tree, "getroot") else tree
+    if root is None:
+        return "UNKNOWN"
     components = root.findall(
         "pds:Observation_Area/pds:Observing_System/pds:Observing_System_Component",
         _NS,
@@ -416,7 +418,7 @@ def load_pds4_raster(
         )
 
     except Exception as rio_exc:
-        if not is_3d_spectrum:
+        if not is_3d_spectrum or fao is None:
             # For 2D products there is no memmap fallback -- re-raise
             raise ValueError(
                 f"Failed to open PDS4 raster via rasterio for {xml_path.name}: "
@@ -429,6 +431,7 @@ def load_pds4_raster(
         )
 
     # --- Memmap fallback for Array_3D_Spectrum (IIRS) ---
+    assert fao is not None
     return _load_3d_spectrum_memmap(xml_path, root, fao, window)
 
 
@@ -495,7 +498,12 @@ def _load_3d_spectrum_memmap(
     for axis_el in arr3d.findall("pds:Axis_Array", _NS):
         name_el = axis_el.find("pds:axis_name", _NS)
         elem_el = axis_el.find("pds:elements", _NS)
-        if name_el is not None and elem_el is not None:
+        if (
+            name_el is not None
+            and elem_el is not None
+            and name_el.text is not None
+            and elem_el.text is not None
+        ):
             axes[name_el.text.strip().upper()] = int(elem_el.text.strip())
 
     n_bands = axes.get("BAND", 0)

@@ -10,10 +10,11 @@ pipeline and the downstream feature-extraction / registration algorithms.
 
 ```text
 backend/preprocessing/
-├── __init__.py       — package docstring
-├── datamodel.py      — RawImage and FeatureImage data structures
-├── io.py             — image loading (PNG, JPEG, TIFF, multi-band raster)
-├── grayscale.py      — conversion to 2-D feature image
+├── __init__.py       — package docstring and symbol exports
+├── datamodel.py      — RawImage, FeatureImage, PDS4Metadata data structures
+├── io.py             — image loading (PNG, JPEG, TIFF, PDS4 XML)
+├── pds4.py           — PDS4 label parser and raster loader (TMC-2, OHRC, IIRS)
+├── grayscale.py      — conversion to 2-D feature image with dynamic range normalization
 ├── normalize.py      — intensity normalization utilities
 ├── metadata.py       — lightweight header-only metadata extraction
 └── clahe.py          — optional CLAHE contrast enhancement
@@ -39,25 +40,54 @@ classical CV algorithms (SIFT, Phase Congruency, etc.).
 
 | Format     | Loader    | Notes                                    |
 |-----------|-----------|------------------------------------------|
-| PNG       | Pillow    | Standard RGB/RGBA/grayscale              |
-| JPEG      | Pillow    | Lossy; RGB uint8                         |
-| TIFF      | rasterio → Pillow fallback | Supports multi-band GeoTIFF |
+| PNG       | Pillow    | Standard RGB/RGBA/grayscale (`io.py:L71`) |
+| JPEG      | Pillow    | Lossy; RGB uint8 (`io.py:L71`)           |
+| TIFF      | rasterio → Pillow fallback | Supports multi-band GeoTIFF (`io.py:L69, L141-161`) |
+| PDS4 XML  | rasterio GDAL PDS4 driver | TMC-2 and OHRC (`io.py:L73-74, L84-126`) |
 
 For TIFF files, rasterio is attempted first (accurate multi-band and
-GeoTIFF support).  If rasterio fails, Pillow is used as a fallback for
-simple TIFF files.
+GeoTIFF support via `_load_rasterio` at `backend/preprocessing/io.py:L164-210`).
+If rasterio fails, Pillow is used as a fallback for simple TIFF files.
+
+For PDS4 `.xml` label inputs, `load_image()` (`backend/preprocessing/io.py:L42-76`)
+delegates to `_load_pds4()` (`backend/preprocessing/io.py:L84-126`). The loader
+validates that the file is a genuine PDS4 `Product_Observational` XML label via
+`is_pds4_label()` (`backend/preprocessing/pds4.py:L112-125`), verifies the instrument
+identity using `identify_instrument()` (`backend/preprocessing/pds4.py:L148-175`),
+and accepts **TMC-2** and **OHRC** products (`io.py:L118-122`),
+loading the pixel raster via `load_pds4_raster()` (`backend/preprocessing/pds4.py:L340-416`).
+**IIRS** products remain explicitly unsupported at this stage (`io.py:L118-122` raises
+`ValueError("Unsupported PDS4 instrument: 'IIRS'. Only TMC-2 and OHRC products are supported in this pipeline.")`)
+pending architectural decisions on hyperspectral band reduction (simple band-averaging vs. PCA).
+Any non-PDS4 XML or unsupported instrument product raises a descriptive `ValueError`.
 
 Multi-band rasters retain **all** bands in the RawImage.  No bands are
 silently discarded.
 
 ### Grayscale / Feature Image Conversion
 
+Conversion from `RawImage` to `FeatureImage` is performed by `to_feature_image()`
+(`backend/preprocessing/grayscale.py:L33-90`):
+
 | Input                  | Strategy                          | Method label           |
 |-----------------------|----------------------------------|----------------------|
-| Single-band (grayscale)| Passthrough to float32           | `passthrough`         |
-| RGB (3-band)          | BT.709 luminance                 | `luminance_bt709`     |
-| RGBA (4-band)         | Drop alpha → BT.709              | `luminance_bt709_alpha_dropped` |
-| Multi-band (>4)       | Per-pixel mean across bands      | `band_mean_Nbands`    |
+| Single-band (grayscale)| Passthrough to float32           | `passthrough` (`grayscale.py:L56-62`) |
+| RGB (3-band)          | BT.709 luminance                 | `luminance_bt709` (`grayscale.py:L63-66`) |
+| RGBA (4-band)         | Drop alpha → BT.709              | `luminance_bt709_alpha_dropped` (`grayscale.py:L67-71`) |
+| Multi-band (>4)       | Per-pixel mean across bands      | `band_mean_Nbands` (`grayscale.py:L72-76`) |
+
+#### Dynamic Range Normalization
+
+Following channel reduction, `to_feature_image()` executes `_normalize_dynamic_range()`
+(`backend/preprocessing/grayscale.py:L92-117`).
+- When input pixel values exceed standard uint8 bounds (`lo < 0.0 or hi > 255.0`),
+  such as raw uint16 TMC-2 radiance counts in `[187, 383]` (or up to 40,000+),
+  a linear min-max stretch to `[0, 255]` is automatically applied (`grayscale.py:L108-113`).
+  This ensures contrast is preserved and prevents OpenCV's downstream `prepare_for_sift()`
+  (`backend/features/sift.py:L50-66`) from clipping all high-range values to uniform 255
+  (which would result in near-zero keypoints).
+- If pixel values already reside within `[0, 255]`, the array is preserved as-is without
+  modification (`grayscale.py:L115-116`).
 
 The multi-band mean strategy is a documented generic approach.  It will
 be replaced by PCA, specific band selection, or domain-aware spectral

@@ -9,6 +9,7 @@ Supported formats
 - **TIFF** — attempted first with rasterio (which supports multi-band
   GeoTIFF and scientific rasters), falling back to Pillow for simple
   TIFF files.
+- **PDS4 XML** — loaded via rasterio GDAL PDS4 driver (TMC-2 and OHRC).
 
 Design notes
 ------------
@@ -69,8 +70,59 @@ def load_image(path: str | Path) -> RawImage:
         return _load_tiff(path)
     elif ext in (".png", ".jpg", ".jpeg"):
         return _load_pillow(path, ext)
+    elif ext == ".xml":
+        return _load_pds4(path)
     else:
         raise ValueError(f"Unsupported image format: '{ext}'")
+
+
+# ---------------------------------------------------------------------------
+# PDS4 loader (TMC-2 and OHRC)
+# ---------------------------------------------------------------------------
+
+
+def _load_pds4(path: Path) -> RawImage:
+    """Load a PDS4 Product_Observational raster image (TMC-2 and OHRC).
+
+    Parameters
+    ----------
+    path : Path
+        Filesystem path to a PDS4 .xml label file.
+
+    Returns
+    -------
+    RawImage
+        Full-fidelity loaded image with source_format="PDS4".
+
+    Raises
+    ------
+    ValueError
+        If the file is not a valid PDS4 label or the instrument is not supported.
+    """
+    import xml.etree.ElementTree as ET
+    from backend.preprocessing.pds4 import (
+        identify_instrument,
+        is_pds4_label,
+        load_pds4_raster,
+    )
+
+    if not is_pds4_label(path):
+        raise ValueError(f"File '{path.name}' is not a valid PDS4 label.")
+
+    try:
+        tree = ET.parse(str(path))
+    except ET.ParseError as exc:
+        raise ValueError(f"Malformed XML in {path.name}: {exc}") from exc
+
+    instrument = identify_instrument(tree)
+    if instrument not in ("TMC2", "OHRC"):
+        raise ValueError(
+            f"Unsupported PDS4 instrument: '{instrument}'. Only TMC-2 and OHRC products are supported in this pipeline."
+        )
+
+    raw_img = load_pds4_raster(path)
+    raw_img.metadata["instrument"] = instrument
+    return raw_img
 
 
 # ---------------------------------------------------------------------------
@@ -90,10 +142,11 @@ def _load_pillow(path: Path, ext: str) -> RawImage:
     metadata: dict[str, Any] = {}
 
     # Preserve useful TIFF/EXIF metadata if available
-    if hasattr(img, "tag_v2"):
+    tag_v2 = getattr(img, "tag_v2", None)
+    if tag_v2 is not None:
         # Pillow TiffImagePlugin stores tags in tag_v2 as {tag_id: value}
         metadata["tiff_tags"] = {
-            k: _safe_meta_value(v) for k, v in img.tag_v2.items()
+            k: _safe_meta_value(v) for k, v in tag_v2.items()
         }
     if hasattr(img, "info") and img.info:
         # Generic Pillow info dict (DPI, palette, etc.)
