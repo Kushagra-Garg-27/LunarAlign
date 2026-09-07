@@ -963,3 +963,72 @@ class TestPreprocessPipeline:
         with pytest.raises(ValueError, match="ref_raster must be provided"):
             preprocess_pair(arr, "OHRC", {}, None, "TMC-2", {})
 
+
+# ---------------------------------------------------------------------------
+# UINT16 DYNAMIC-RANGE NORMALIZE FIX (TMC-2 → SIFT keypoint test)
+# ---------------------------------------------------------------------------
+
+class TestUint16DynamicRangeNormalizeFix:
+    """Regression test for the uint16 contrast-destruction bug.
+
+    Before the fix, to_feature_image() performed a raw float32 passthrough
+    with no dynamic range stretch.  Then prepare_for_sift() would clip all
+    values to [0, 255] via np.clip — which for TMC-2 uint16 data with
+    pixel values in [187, 383] meant everything above 255 was flattened,
+    destroying contrast and producing near-zero SIFT keypoints.
+
+    The fix adds _normalize_dynamic_range() inside to_feature_image() to
+    stretch out-of-range data to [0, 255] before SIFT consumption.
+    """
+
+    def test_tmc2_uint16_sift_keypoint_count(self):
+        """Real TMC-2 uint16 fixture → to_feature_image → prepare_for_sift → SIFT detects ≥10 keypoints."""
+        from backend.preprocessing.pds4 import load_pds4_raster
+        from backend.preprocessing.datamodel import RawImage
+        from backend.preprocessing.grayscale import to_feature_image
+        from backend.features.sift import prepare_for_sift, extract_sift
+
+        meta = load_pds4_raster(TMC2_FIXTURE_XML)
+        assert meta.data.dtype == np.uint16, f"Expected uint16, got {meta.data.dtype}"
+
+        # Confirm pixel values exceed uint8 range (the bug precondition)
+        assert meta.data.max() > 255, (
+            f"TMC-2 fixture max={meta.data.max()} — expected >255 for this test"
+        )
+
+        raw = RawImage(
+            data=meta.data,
+            width=meta.data.shape[1],
+            height=meta.data.shape[0],
+            num_bands=1,
+            dtype=meta.data.dtype,
+            source_format="pds4",
+        )
+
+        # Run the canonical pipeline path: to_feature_image → prepare_for_sift
+        feat = to_feature_image(raw)
+
+        # Verify dynamic range stretch occurred
+        assert feat.data.min() >= 0.0
+        assert feat.data.max() <= 255.0
+        assert feat.data.max() > 200.0, (
+            f"Stretch should use full range; max={feat.data.max():.1f}"
+        )
+
+        # Verify SIFT input has contrast (not clipped to uniform value)
+        sift_input = prepare_for_sift(feat)
+        assert sift_input.dtype == np.uint8
+        unique_values = len(np.unique(sift_input))
+        assert unique_values > 10, (
+            f"Expected >10 unique uint8 values, got {unique_values} "
+            f"(indicates clipping/contrast destruction)"
+        )
+
+        # Extract SIFT — the actual regression check
+        sift_result = extract_sift(feat)
+        assert sift_result.num_keypoints >= 10, (
+            f"Expected ≥10 SIFT keypoints on 500×500 TMC-2, got "
+            f"{sift_result.num_keypoints}. Pre-fix, this was near-zero "
+            f"due to uint16 values being clipped to 255."
+        )
+
