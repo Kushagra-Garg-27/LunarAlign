@@ -36,7 +36,7 @@ IIRS wavelength metadata
 ------------------------
 256 Band_Bin entries with center_wavelength and band_width (nm) are embedded in
 the label XML under File_Area_Observational/Array_3D_Spectrum/Axis_Array/
-Band_Bin_Set/Band_Bin. Extraction is out of scope for Stage 2a.
+Band_Bin_Set/Band_Bin. Extracted via extract_iirs_band_wavelengths().
 """
 
 from __future__ import annotations
@@ -324,6 +324,88 @@ def extract_pds4_metadata(xml_path: str | Path) -> PDS4Metadata:
         tmc2_geometry_params=tmc2_geometry_params,
         wavelength_info=wavelength_info,
     )
+
+
+def extract_iirs_band_wavelengths(xml_path: str | Path) -> list[dict[str, Any]]:
+    """Extract per-band wavelength metadata from an IIRS PDS4 XML label.
+
+    Parses all ``Band_Bin`` elements in the label XML and returns per-band
+    ``center_wavelength`` and ``band_width`` (with units) in band order.
+
+    Parameters
+    ----------
+    xml_path : str | Path
+        Path to the PDS4 .xml label file.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        List of dicts in band order, each containing:
+        - ``band_number``: int
+        - ``center_wavelength``: float
+        - ``center_wavelength_unit``: str | None
+        - ``band_width``: float
+        - ``band_width_unit``: str | None
+        - ``unit``: str | None
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``xml_path`` does not exist.
+    ValueError
+        If ``xml_path`` is not a valid PDS4 Product_Observational label.
+    """
+    xml_path = Path(xml_path)
+    if not xml_path.exists():
+        raise FileNotFoundError(f"PDS4 label not found: {xml_path}")
+
+    try:
+        tree = ET.parse(str(xml_path))
+    except ET.ParseError as exc:
+        raise ValueError(f"Malformed XML in {xml_path.name}: {exc}") from exc
+
+    root = tree.getroot()
+    if root.tag != _PDS4_ROOT_TAG:
+        raise ValueError(
+            f"{xml_path.name} is not a PDS4 Product_Observational label "
+            f"(root tag: {root.tag!r})"
+        )
+
+    band_bins = root.findall(".//pds:Band_Bin", _NS)
+    if not band_bins:
+        band_bins = root.findall(".//Band_Bin")
+
+    results: list[dict[str, Any]] = []
+    for idx, bb in enumerate(band_bins, start=1):
+        num_el = bb.find("pds:band_number", _NS)
+        if num_el is None:
+            num_el = bb.find("band_number")
+
+        cwl_el = bb.find("pds:center_wavelength", _NS)
+        if cwl_el is None:
+            cwl_el = bb.find("center_wavelength")
+
+        bw_el = bb.find("pds:band_width", _NS)
+        if bw_el is None:
+            bw_el = bb.find("band_width")
+
+        band_num = int(num_el.text.strip()) if (num_el is not None and num_el.text) else idx
+        cwl = float(cwl_el.text.strip()) if (cwl_el is not None and cwl_el.text) else 0.0
+        cwl_unit = cwl_el.attrib.get("unit") if cwl_el is not None else None
+        bw = float(bw_el.text.strip()) if (bw_el is not None and bw_el.text) else 0.0
+        bw_unit = bw_el.attrib.get("unit") if bw_el is not None else None
+
+        results.append({
+            "band_number": band_num,
+            "center_wavelength": cwl,
+            "center_wavelength_unit": cwl_unit,
+            "band_width": bw,
+            "band_width_unit": bw_unit,
+            "unit": cwl_unit or bw_unit,
+        })
+
+    results.sort(key=lambda x: x["band_number"])
+    return results
 
 
 def load_pds4_raster(

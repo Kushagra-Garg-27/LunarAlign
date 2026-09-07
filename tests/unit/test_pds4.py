@@ -724,3 +724,81 @@ class TestExtractPds4FileMetadata:
         # The PDS4 fields must always be present
         assert "pds4_isda_product_params" in meta
         assert len(meta["pds4_isda_product_params"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# extract_iirs_band_wavelengths() tests
+# ---------------------------------------------------------------------------
+
+class TestExtractIIRSBandWavelengths:
+    """Unit tests for extract_iirs_band_wavelengths() against real and synthetic PDS4 labels."""
+
+    # Expected exact values from tests/fixtures/pds4/iirs/ch2_iirs_sample_200x200x16.xml
+    EXPECTED_REAL_FIXTURE_BANDS = [
+        {"band_number": 1, "center_wavelength": 712.3, "band_width": 19.8, "unit": "nm"},
+        {"band_number": 2, "center_wavelength": 729.2, "band_width": 19.9, "unit": "nm"},
+        {"band_number": 3, "center_wavelength": 746.0, "band_width": 20.0, "unit": "nm"},
+        {"band_number": 4, "center_wavelength": 762.9, "band_width": 20.1, "unit": "nm"},
+        {"band_number": 5, "center_wavelength": 779.7, "band_width": 20.2, "unit": "nm"},
+        {"band_number": 6, "center_wavelength": 796.6, "band_width": 20.3, "unit": "nm"},
+        {"band_number": 7, "center_wavelength": 813.4, "band_width": 20.4, "unit": "nm"},
+        {"band_number": 8, "center_wavelength": 830.3, "band_width": 20.4, "unit": "nm"},
+        {"band_number": 9, "center_wavelength": 847.2, "band_width": 20.5, "unit": "nm"},
+        {"band_number": 10, "center_wavelength": 864.0, "band_width": 20.5, "unit": "nm"},
+        {"band_number": 11, "center_wavelength": 880.9, "band_width": 20.6, "unit": "nm"},
+        {"band_number": 12, "center_wavelength": 897.7, "band_width": 20.6, "unit": "nm"},
+        {"band_number": 13, "center_wavelength": 914.6, "band_width": 20.6, "unit": "nm"},
+        {"band_number": 14, "center_wavelength": 931.4, "band_width": 20.7, "unit": "nm"},
+        {"band_number": 15, "center_wavelength": 948.3, "band_width": 20.7, "unit": "nm"},
+        {"band_number": 16, "center_wavelength": 965.1, "band_width": 20.8, "unit": "nm"},
+    ]
+
+    def test_real_iirs_fixture_wavelengths_match_xml(self):
+        """Verify all 16 bands extracted from real IIRS fixture XML exactly match XML values."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+
+        bands = extract_iirs_band_wavelengths(IIRS_XML)
+        assert len(bands) == 16, f"Expected 16 bands, got {len(bands)}"
+
+        for i, (actual, expected) in enumerate(zip(bands, self.EXPECTED_REAL_FIXTURE_BANDS)):
+            assert actual["band_number"] == expected["band_number"], (
+                f"Band {i+1} band_number mismatch: {actual['band_number']} != {expected['band_number']}"
+            )
+            assert actual["center_wavelength"] == pytest.approx(expected["center_wavelength"], abs=1e-4), (
+                f"Band {i+1} center_wavelength mismatch: {actual['center_wavelength']} != {expected['center_wavelength']}"
+            )
+            assert actual["band_width"] == pytest.approx(expected["band_width"], abs=1e-4), (
+                f"Band {i+1} band_width mismatch: {actual['band_width']} != {expected['band_width']}"
+            )
+            assert actual["center_wavelength_unit"] == expected["unit"], (
+                f"Band {i+1} center_wavelength_unit mismatch: {actual['center_wavelength_unit']} != {expected['unit']}"
+            )
+            assert actual["band_width_unit"] == expected["unit"], (
+                f"Band {i+1} band_width_unit mismatch: {actual['band_width_unit']} != {expected['unit']}"
+            )
+            assert actual["unit"] == expected["unit"], (
+                f"Band {i+1} unit mismatch: {actual['unit']} != {expected['unit']}"
+            )
+
+    def test_nonexistent_xml_raises_filenotfound(self):
+        """Missing XML file must raise FileNotFoundError."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+
+        with pytest.raises(FileNotFoundError, match="PDS4 label not found"):
+            extract_iirs_band_wavelengths("nonexistent_path_to_iirs.xml")
+
+    def test_non_pds4_xml_raises_valueerror(self, tmp_path):
+        """Non-PDS4 XML must raise ValueError."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+
+        p = _write_non_pds4_xml(tmp_path)
+        with pytest.raises(ValueError, match="not a PDS4 Product_Observational label"):
+            extract_iirs_band_wavelengths(p)
+
+    def test_tmc2_xml_has_no_band_bins(self):
+        """TMC-2 label XML has no Band_Bin elements and returns empty list."""
+        from backend.preprocessing.pds4 import extract_iirs_band_wavelengths
+
+        bands = extract_iirs_band_wavelengths(TMC2_XML)
+        assert bands == []
+

@@ -1,4 +1,4 @@
-﻿"""
+"""
 SIH26166 — IIRS Band Reduction (Module 02).
 
 Reduces high-dimensional hyperspectral cubes (e.g. Chandrayaan-2 IIRS with 256 bands)
@@ -8,7 +8,7 @@ into representative 2D images or low-dimensional feature representations for spa
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 from sklearn.decomposition import PCA
@@ -152,3 +152,53 @@ def select_bands(cube: np.ndarray, indices: Sequence[int]) -> np.ndarray:
 
     selected = cube[list(indices), :, :]
     return np.nan_to_num(selected, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+
+def select_solar_reflective_bands(
+    wavelengths_nm: Sequence[float | dict[str, Any]],
+    cutoff_nm: float = 2500.0,
+) -> list[int]:
+    """Select spectral band indices below a solar-reflective cutoff wavelength.
+
+    Returns the 0-based indices of all bands whose center wavelength is strictly
+    below ``cutoff_nm``. These indices can be directly passed to :func:`select_bands`
+    to subset a 3D hyperspectral cube.
+
+    Methodological and Validation Notes
+    -----------------------------------
+    - This cutoff (~2500nm) is a heuristic based on where lunar thermal emission
+      begins to dominate reflected solar radiance for IIRS, per general lunar
+      remote-sensing literature — it is NOT independently validated against real
+      Chandrayaan-2 thermal-band data, because no such data exists in this
+      project's fixtures yet.
+    - This function does not currently exclude known narrow absorption features
+      (e.g. ~2800-3000nm OH/H2O band) within the solar-reflective range — that
+      refinement is a possible future improvement, not implemented here.
+
+    Parameters
+    ----------
+    wavelengths_nm : Sequence[float | dict[str, Any]]
+        List or sequence of center wavelengths in nanometers (nm). Accepts either
+        numeric values (float or int) or dictionary entries containing a
+        ``"center_wavelength"`` key (such as returned by
+        :func:`backend.preprocessing.pds4.extract_iirs_band_wavelengths`).
+    cutoff_nm : float, default 2500.0
+        Upper wavelength cutoff in nanometers. Bands with
+        ``center_wavelength < cutoff_nm`` are retained.
+
+    Returns
+    -------
+    list[int]
+        0-based band indices for all bands with center wavelength strictly below
+        ``cutoff_nm``, in their original order.
+    """
+    selected_indices: list[int] = []
+    for idx, item in enumerate(wavelengths_nm):
+        if isinstance(item, dict):
+            wl = float(item.get("center_wavelength", 0.0))
+        else:
+            wl = float(item)
+        if wl < cutoff_nm:
+            selected_indices.append(idx)
+    return selected_indices
+
