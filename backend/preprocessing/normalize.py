@@ -1,4 +1,4 @@
-﻿"""
+"""
 SIH26166 — Radiometric Normalization (Module 01).
 
 Provides intensity normalization and cross-temporal histogram matching
@@ -49,34 +49,18 @@ def normalize_intensity(
         return np.zeros(image.shape, dtype=np.float32)
 
     # Clean NaNs and infinite values
-    arr = np.nan_to_num(image, nan=0.0, posinf=0.0, neginf=0.0)
+    arr = np.nan_to_num(image, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
-    # Initial scaling to [0, 1] based on source dtype
-    if image.dtype == np.uint16:
-        # Scale uint16 (TMC-2) by max range
-        scaled = arr.astype(np.float32) / 65535.0
-    elif image.dtype == np.uint8:
-        # Scale uint8 (OHRC) by max range
-        scaled = arr.astype(np.float32) / 255.0
-    else:
-        # Floating point or other integer types (e.g. IIRS bands)
-        f_arr = arr.astype(np.float32)
-        lo, hi = float(f_arr.min()), float(f_arr.max())
-        if lo == hi:
-            return np.zeros(image.shape, dtype=np.float32)
-        scaled = (f_arr - lo) / (hi - lo)
-
-    scaled = np.clip(scaled, 0.0, 1.0)
-    lo, hi = float(scaled.min()), float(scaled.max())
+    lo, hi = float(arr.min()), float(arr.max())
     if lo == hi:
         return np.zeros(image.shape, dtype=np.float32)
 
+    # Min-max stretch to [0, 1] float to preserve full dynamic contrast across all sensor dtypes
+    scaled = np.clip((arr - lo) / (hi - lo), 0.0, 1.0).astype(np.float32)
+
     if norm_method == "minmax":
-        # Ensure exact [0, 1] stretch
-        if lo == hi:
-            return np.zeros(image.shape, dtype=np.float32)
-        out = (scaled - lo) / (hi - lo)
-        return np.clip(out, 0.0, 1.0).astype(np.float32)
+        return scaled
+
 
     elif norm_method == "histogram_eq":
         # Global histogram equalization via skimage
